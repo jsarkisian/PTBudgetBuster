@@ -1,0 +1,63 @@
+version: "3.8"
+
+services:
+  toolbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.toolbox
+    container_name: pentest-toolbox
+    volumes:
+      - scan-data:/opt/pentest/data
+      - tool-configs:/opt/pentest/configs
+    networks:
+      - pentest-net
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: pentest-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - scan-data:/opt/pentest/data
+      - ./backend:/app
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - TOOLBOX_HOST=toolbox
+      - TOOLBOX_PORT=9500
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
+    depends_on:
+      - toolbox
+    networks:
+      - pentest-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: pentest-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - pentest-net
+    restart: unless-stopped
+
+volumes:
+  scan-data:
+  tool-configs:
+
+networks:
+  pentest-net:
+    driver: bridge

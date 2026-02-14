@@ -1,0 +1,539 @@
+# Tool definitions for the pentest MCP server
+# Each tool has a name, description, binary path, and parameter schema
+
+tools:
+  subfinder:
+    name: subfinder
+    description: "Subdomain discovery tool using passive sources"
+    binary: /root/go/bin/subfinder
+    category: reconnaissance
+    risk_level: low
+    default_args: ["-silent"]
+    parameters:
+      domain:
+        type: string
+        required: true
+        flag: "-d"
+        description: "Target domain"
+      sources:
+        type: string
+        required: false
+        flag: "-sources"
+        description: "Comma-separated list of sources"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file path"
+      recursive:
+        type: boolean
+        required: false
+        flag: "-recursive"
+        description: "Enable recursive subdomain discovery"
+      timeout:
+        type: integer
+        required: false
+        flag: "-timeout"
+        description: "Timeout in seconds"
+
+  httpx:
+    name: httpx
+    description: "HTTP probe tool for finding live web servers"
+    binary: /root/go/bin/httpx
+    category: reconnaissance
+    risk_level: low
+    default_args: ["-silent"]
+    parameters:
+      target:
+        type: string
+        required: false
+        flag: "-u"
+        description: "Single target URL"
+      list:
+        type: string
+        required: false
+        flag: "-l"
+        description: "Input file with list of targets"
+      ports:
+        type: string
+        required: false
+        flag: "-ports"
+        description: "Custom ports to probe"
+      status_code:
+        type: boolean
+        required: false
+        flag: "-status-code"
+        description: "Show status codes"
+      title:
+        type: boolean
+        required: false
+        flag: "-title"
+        description: "Show page titles"
+      tech_detect:
+        type: boolean
+        required: false
+        flag: "-tech-detect"
+        description: "Detect technologies"
+      follow_redirects:
+        type: boolean
+        required: false
+        flag: "-follow-redirects"
+        description: "Follow HTTP redirects"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file path"
+
+  nuclei:
+    name: nuclei
+    description: "Vulnerability scanner using YAML templates"
+    binary: /root/go/bin/nuclei
+    category: vulnerability_scanning
+    risk_level: medium
+    default_args: ["-silent"]
+    parameters:
+      target:
+        type: string
+        required: false
+        flag: "-u"
+        description: "Single target URL"
+      list:
+        type: string
+        required: false
+        flag: "-l"
+        description: "Input file with list of targets"
+      templates:
+        type: string
+        required: false
+        flag: "-t"
+        description: "Template or directory to use"
+      tags:
+        type: string
+        required: false
+        flag: "-tags"
+        description: "Filter templates by tags"
+      severity:
+        type: string
+        required: false
+        flag: "-severity"
+        description: "Filter by severity (info,low,medium,high,critical)"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file path"
+      json_output:
+        type: boolean
+        required: false
+        flag: "-jsonl"
+        description: "Output in JSONL format"
+      rate_limit:
+        type: integer
+        required: false
+        flag: "-rate-limit"
+        description: "Max requests per second"
+
+  naabu:
+    name: naabu
+    description: "Fast port scanner"
+    binary: /root/go/bin/naabu
+    category: reconnaissance
+    risk_level: low
+    default_args: ["-silent"]
+    parameters:
+      host:
+        type: string
+        required: false
+        flag: "-host"
+        description: "Target host"
+      list:
+        type: string
+        required: false
+        flag: "-list"
+        description: "Input file with list of hosts"
+      ports:
+        type: string
+        required: false
+        flag: "-p"
+        description: "Ports to scan (e.g., 80,443,8080 or 1-1000)"
+      top_ports:
+        type: string
+        required: false
+        flag: "-top-ports"
+        description: "Scan top N ports (100, 1000)"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file path"
+      rate:
+        type: integer
+        required: false
+        flag: "-rate"
+        description: "Packet send rate"
+
+  nmap:
+    name: nmap
+    description: "Network mapper and port scanner with advanced features"
+    binary: /usr/bin/nmap
+    category: reconnaissance
+    risk_level: medium
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        positional: true
+        description: "Target host or network"
+      ports:
+        type: string
+        required: false
+        flag: "-p"
+        description: "Port specification"
+      scan_type:
+        type: string
+        required: false
+        flag: ""
+        description: "Scan type flag (e.g., -sV, -sS, -sC)"
+        raw_flag: true
+      output_xml:
+        type: string
+        required: false
+        flag: "-oX"
+        description: "XML output file"
+      output_normal:
+        type: string
+        required: false
+        flag: "-oN"
+        description: "Normal output file"
+      scripts:
+        type: string
+        required: false
+        flag: "--script"
+        description: "NSE scripts to run"
+      timing:
+        type: string
+        required: false
+        flag: "-T"
+        description: "Timing template (0-5)"
+
+  katana:
+    name: katana
+    description: "Web crawler for discovering endpoints and URLs"
+    binary: /root/go/bin/katana
+    category: reconnaissance
+    risk_level: low
+    default_args: ["-silent"]
+    parameters:
+      target:
+        type: string
+        required: true
+        flag: "-u"
+        description: "Target URL"
+      depth:
+        type: integer
+        required: false
+        flag: "-d"
+        description: "Crawl depth"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file path"
+      js_crawl:
+        type: boolean
+        required: false
+        flag: "-jc"
+        description: "Enable JavaScript crawling"
+
+  dnsx:
+    name: dnsx
+    description: "DNS toolkit for running multiple DNS queries"
+    binary: /root/go/bin/dnsx
+    category: reconnaissance
+    risk_level: low
+    default_args: ["-silent"]
+    parameters:
+      domain:
+        type: string
+        required: false
+        flag: "-d"
+        description: "Target domain"
+      list:
+        type: string
+        required: false
+        flag: "-l"
+        description: "Input file with list of domains"
+      record_type:
+        type: string
+        required: false
+        flag: "-"
+        description: "Record type (a, aaaa, cname, mx, ns, txt, srv, ptr)"
+        raw_flag: true
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file path"
+
+  tlsx:
+    name: tlsx
+    description: "TLS/SSL certificate analyzer"
+    binary: /root/go/bin/tlsx
+    category: reconnaissance
+    risk_level: low
+    default_args: ["-silent"]
+    parameters:
+      host:
+        type: string
+        required: false
+        flag: "-u"
+        description: "Target host"
+      list:
+        type: string
+        required: false
+        flag: "-l"
+        description: "Input file with list of hosts"
+      san:
+        type: boolean
+        required: false
+        flag: "-san"
+        description: "Show Subject Alternative Names"
+      cn:
+        type: boolean
+        required: false
+        flag: "-cn"
+        description: "Show Common Name"
+      expired:
+        type: boolean
+        required: false
+        flag: "-expired"
+        description: "Show only expired certs"
+
+  ffuf:
+    name: ffuf
+    description: "Fast web fuzzer for directory/file discovery"
+    binary: /root/go/bin/ffuf
+    category: discovery
+    risk_level: medium
+    default_args: []
+    parameters:
+      url:
+        type: string
+        required: true
+        flag: "-u"
+        description: "Target URL with FUZZ keyword"
+      wordlist:
+        type: string
+        required: true
+        flag: "-w"
+        description: "Wordlist path"
+      method:
+        type: string
+        required: false
+        flag: "-X"
+        description: "HTTP method"
+      filter_code:
+        type: string
+        required: false
+        flag: "-fc"
+        description: "Filter status codes"
+      match_code:
+        type: string
+        required: false
+        flag: "-mc"
+        description: "Match status codes"
+      rate:
+        type: integer
+        required: false
+        flag: "-rate"
+        description: "Requests per second"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file path"
+
+  gowitness:
+    name: gowitness
+    description: "Web screenshot tool"
+    binary: /root/go/bin/gowitness
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      url:
+        type: string
+        required: false
+        flag: ""
+        description: "Target URL (used with 'single' subcommand)"
+      file:
+        type: string
+        required: false
+        flag: "-f"
+        description: "Input file with URLs"
+      subcommand:
+        type: string
+        required: true
+        description: "Subcommand: single, file, scan"
+      screenshot_path:
+        type: string
+        required: false
+        flag: "--screenshot-path"
+        description: "Path to save screenshots"
+
+  waybackurls:
+    name: waybackurls
+    description: "Fetch URLs from the Wayback Machine"
+    binary: /root/go/bin/waybackurls
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      domain:
+        type: string
+        required: true
+        positional: true
+        description: "Target domain (passed via stdin/pipe)"
+        stdin: true
+
+  whatweb:
+    name: whatweb
+    description: "Web technology fingerprinter"
+    binary: /usr/bin/whatweb
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        positional: true
+        description: "Target URL"
+      aggression:
+        type: integer
+        required: false
+        flag: "-a"
+        description: "Aggression level (1-4)"
+
+  wafw00f:
+    name: wafw00f
+    description: "Web Application Firewall detection tool"
+    binary: /usr/bin/wafw00f
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        positional: true
+        description: "Target URL"
+      all_waf:
+        type: boolean
+        required: false
+        flag: "-a"
+        description: "Test for all WAFs"
+
+  sslscan:
+    name: sslscan
+    description: "SSL/TLS configuration scanner"
+    binary: /usr/bin/sslscan
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        positional: true
+        description: "Target host:port"
+      no_color:
+        type: boolean
+        required: false
+        flag: "--no-colour"
+        description: "Disable color output"
+      xml:
+        type: string
+        required: false
+        flag: "--xml"
+        description: "XML output file"
+
+  nikto:
+    name: nikto
+    description: "Web server vulnerability scanner"
+    binary: /usr/bin/nikto
+    category: vulnerability_scanning
+    risk_level: high
+    default_args: []
+    parameters:
+      host:
+        type: string
+        required: true
+        flag: "-h"
+        description: "Target host"
+      port:
+        type: integer
+        required: false
+        flag: "-p"
+        description: "Target port"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file"
+      format:
+        type: string
+        required: false
+        flag: "-Format"
+        description: "Output format (csv, htm, msf+, nbe, sql, txt, xml)"
+      tuning:
+        type: string
+        required: false
+        flag: "-Tuning"
+        description: "Scan tuning options"
+
+  masscan:
+    name: masscan
+    description: "Ultra-fast port scanner for large networks"
+    binary: /usr/bin/masscan
+    category: reconnaissance
+    risk_level: high
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        positional: true
+        description: "Target IP range"
+      ports:
+        type: string
+        required: true
+        flag: "-p"
+        description: "Port specification"
+      rate:
+        type: integer
+        required: false
+        flag: "--rate"
+        description: "Packet send rate"
+      output:
+        type: string
+        required: false
+        flag: "-oL"
+        description: "List output file"
+
+# Bash tool for custom commands and piped operations
+  bash:
+    name: bash
+    description: "Execute custom bash commands for tool chaining and complex operations"
+    binary: /bin/bash
+    category: utility
+    risk_level: high
+    default_args: ["-c"]
+    parameters:
+      command:
+        type: string
+        required: true
+        positional: true
+        description: "Bash command to execute"
