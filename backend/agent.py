@@ -27,7 +27,7 @@ SYSTEM_PROMPT = """You are an expert penetration tester assistant operating with
 ## Available Tools
 You can execute security tools through the `execute_tool` function. Available tools include:
 - **subfinder**: Passive subdomain enumeration
-- **httpx**: HTTP probing for live web servers  
+- **httpx**: HTTP probing for live web servers, screenshots with -screenshot flag
 - **nuclei**: Template-based vulnerability scanning
 - **naabu**: Fast port scanning
 - **nmap**: Advanced network scanning and service detection
@@ -35,7 +35,7 @@ You can execute security tools through the `execute_tool` function. Available to
 - **dnsx**: DNS resolution and record lookups
 - **tlsx**: TLS/SSL certificate analysis
 - **ffuf**: Web fuzzing for directories and files
-- **gowitness**: Web screenshots
+- **gowitness**: Web screenshots (legacy, prefer httpx -screenshot instead)
 - **waybackurls**: Historical URL discovery from Wayback Machine
 - **whatweb**: Web technology fingerprinting
 - **wafw00f**: WAF detection
@@ -51,6 +51,11 @@ You can execute security tools through the `execute_tool` function. Available to
 4. When in autonomous mode, propose each step and wait for approval
 5. Provide actionable remediation advice for findings
 6. Chain tools effectively: recon → enumeration → scanning → analysis
+
+## Tool Tips
+- **Screenshots**: Always use httpx with -screenshot flag. Save to /opt/pentest/data/screenshots/ using --screenshot-path. Example: `echo "target.com" | httpx -screenshot -screenshot-path /opt/pentest/data/screenshots/`
+  For multiple targets from a file: `httpx -l /opt/pentest/data/targets.txt -screenshot -screenshot-path /opt/pentest/data/screenshots/`
+  httpx saves each screenshot as a separate file named by the URL, avoiding overwrites.
 
 ## Output Format
 When reporting findings, use this structure:
