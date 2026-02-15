@@ -283,12 +283,6 @@ async def chat(req: ChatMessage):
     
     session.add_message("user", req.message)
     
-    await broadcast(req.session_id, {
-        "type": "chat_message",
-        "role": "user",
-        "content": req.message,
-        "timestamp": datetime.utcnow().isoformat(),
-    })
     
     agent = PentestAgent(
         api_key=settings.anthropic_api_key,

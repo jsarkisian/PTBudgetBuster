@@ -129,15 +129,11 @@ export default function App() {
   const handleSendChat = async (message) => {
     if (!activeSession) return;
     setChatLoading(true);
+    // Add user message locally for immediate feedback
+    setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
     try {
-      setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
-      const response = await api.chat({ message, session_id: activeSession.id });
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: response.content,
-        toolCalls: response.tool_calls,
-        timestamp: new Date().toISOString(),
-      }]);
+      await api.chat({ message, session_id: activeSession.id });
+      // Response comes via WebSocket, no need to add here
     } catch (err) {
       setMessages(prev => [...prev, {
         role: 'error',
