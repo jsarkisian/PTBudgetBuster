@@ -1,4 +1,5 @@
 import React from 'react';
+import { api } from '../utils/api';
 
 export default function SessionSidebar({ sessions, activeSession, onSelect, onDelete, onNew }) {
   return (
@@ -24,13 +25,22 @@ export default function SessionSidebar({ sessions, activeSession, onSelect, onDe
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-200 truncate">{session.name}</span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDelete(session.id); }}
-                  className="hidden group-hover:block text-gray-500 hover:text-accent-red text-xs"
-                  title="Delete"
-                >
-                  ✕
-                </button>
+                <div className="hidden group-hover:flex items-center gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); api.exportSession(session.id); }}
+                    className="text-gray-500 hover:text-accent-blue text-xs"
+                    title="Export"
+                  >
+                    ⬇
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(session.id); }}
+                    className="text-gray-500 hover:text-accent-red text-xs"
+                    title="Delete"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-gray-500">{session.target_scope?.[0] || 'No scope'}</span>
