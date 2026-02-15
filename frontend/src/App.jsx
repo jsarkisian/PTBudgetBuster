@@ -27,15 +27,6 @@ export default function App() {
   // WebSocket handler
   const handleWsMessage = useCallback((event) => {
     switch (event.type) {
-      case 'chat_message':
-        setMessages(prev => [...prev, {
-          role: event.role,
-          content: event.content,
-          toolCalls: event.tool_calls,
-          timestamp: event.timestamp,
-        }]);
-        break;
-
       case 'tool_start':
         setOutputs(prev => [...prev, {
           id: event.task_id,
