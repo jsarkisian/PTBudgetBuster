@@ -193,9 +193,37 @@ function OutputEntry({ entry, onImageClick }) {
     const output = result.output || '';
     const error = result.error || '';
     const command = result.command || '';
+    const params = result.parameters || {};
+
+    // Build text to search for image paths — include output, command, and parameter values
+    const paramValues = Object.values(params).map(v => String(v)).join('\n');
+    const searchText = [output, command, error, paramValues].join('\n');
 
     // Extract screenshot paths from output and command
-    const imagePaths = extractImagePaths(output + '\n' + command + '\n' + error);
+    let imagePaths = extractImagePaths(searchText);
+
+    // For screenshot tools, also try to load from the screenshots API
+    const isScreenshotTool = entry.tool === 'gowitness' || 
+      command.includes('gowitness') || 
+      command.includes('screenshot') ||
+      paramValues.includes('screenshot');
+
+    const [apiScreenshots, setApiScreenshots] = useState([]);
+
+    useEffect(() => {
+      if (isScreenshotTool && isSuccess && imagePaths.length === 0) {
+        fetch('/api/screenshots')
+          .then(r => r.json())
+          .then(data => {
+            if (data.screenshots && data.screenshots.length > 0) {
+              setApiScreenshots(data.screenshots.map(s => s.path));
+            }
+          })
+          .catch(() => {});
+      }
+    }, []);
+
+    const allImages = [...new Set([...imagePaths, ...apiScreenshots])];
 
     return (
       <div className={`border rounded ${
@@ -215,9 +243,9 @@ function OutputEntry({ entry, onImageClick }) {
           <span className={`text-[10px] ${isSuccess ? 'text-accent-green' : 'text-accent-red'}`}>
             {result.status}
           </span>
-          {imagePaths.length > 0 && (
+          {allImages.length > 0 && (
             <span className="text-[10px] bg-accent-blue/20 text-accent-blue px-1.5 rounded">
-              📸 {imagePaths.length}
+              📸 {allImages.length}
             </span>
           )}
           <span className="text-gray-500 text-xs ml-auto">
@@ -228,11 +256,11 @@ function OutputEntry({ entry, onImageClick }) {
         {expanded && (
           <div className="px-3 pb-3 border-t border-dark-600">
             {/* Screenshots */}
-            {imagePaths.length > 0 && (
+            {allImages.length > 0 && (
               <div className="mt-2 mb-2">
                 <div className="text-xs text-gray-400 font-medium mb-1.5">Screenshots</div>
                 <div className="flex flex-wrap gap-2">
-                  {imagePaths.map((imgPath, idx) => (
+                  {allImages.map((imgPath, idx) => (
                     <ScreenshotThumb
                       key={idx}
                       path={imgPath}
