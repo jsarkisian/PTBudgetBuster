@@ -319,8 +319,61 @@ async def read_file(path: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     
+    # Serve image files as binary
+    image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+    if file_path.suffix.lower() in image_exts:
+        from fastapi.responses import FileResponse
+        return FileResponse(file_path, media_type=f"image/{file_path.suffix.lower().strip('.')}")
+    
     content = file_path.read_text(errors="replace")
     return {"path": str(file_path), "content": content}
+
+
+@app.get("/images/{path:path}")
+async def serve_image(path: str):
+    """Serve image files from anywhere on the filesystem."""
+    from fastapi.responses import FileResponse
+    
+    # Allow serving from data dir and common screenshot locations
+    search_paths = [
+        Path(DATA_DIR) / path,
+        Path("/opt/pentest") / path,
+        Path("/tmp") / path,
+        Path(path),  # absolute path
+    ]
+    
+    for file_path in search_paths:
+        if file_path.exists() and file_path.is_file():
+            ext = file_path.suffix.lower().strip(".")
+            if ext in ("png", "jpg", "jpeg", "gif", "webp", "bmp"):
+                return FileResponse(file_path, media_type=f"image/{ext}")
+    
+    raise HTTPException(status_code=404, detail="Image not found")
+
+
+@app.get("/screenshots")
+async def list_screenshots(directory: str = ""):
+    """List all screenshot image files recursively."""
+    image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+    screenshots = []
+    
+    search_dirs = [Path(DATA_DIR)]
+    if directory:
+        search_dirs = [Path(DATA_DIR) / directory]
+    
+    for search_dir in search_dirs:
+        if not search_dir.exists():
+            continue
+        for file_path in search_dir.rglob("*"):
+            if file_path.is_file() and file_path.suffix.lower() in image_exts:
+                screenshots.append({
+                    "name": file_path.name,
+                    "path": str(file_path.relative_to(DATA_DIR)),
+                    "size": file_path.stat().st_size,
+                    "modified": datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
+                })
+    
+    return {"screenshots": screenshots}
 
 
 @app.get("/files")
