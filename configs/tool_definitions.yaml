@@ -38,7 +38,7 @@ tools:
 
   httpx:
     name: httpx
-    description: "HTTP probe tool for finding live web servers"
+    description: "HTTP probe tool for finding live web servers. Also supports screenshots with -screenshot flag."
     binary: /root/go/bin/httpx
     category: reconnaissance
     risk_level: low
@@ -54,6 +54,11 @@ tools:
         required: false
         flag: "-l"
         description: "Input file with list of targets"
+      stdin_targets:
+        type: string
+        required: false
+        stdin: true
+        description: "Pipe targets via stdin (one per line)"
       ports:
         type: string
         required: false
@@ -79,6 +84,16 @@ tools:
         required: false
         flag: "-follow-redirects"
         description: "Follow HTTP redirects"
+      screenshot:
+        type: boolean
+        required: false
+        flag: "-screenshot"
+        description: "Take screenshots of web pages"
+      screenshot_path:
+        type: string
+        required: false
+        flag: "-screenshot-path"
+        description: "Path to save screenshots (default: ./output/screenshot)"
       output:
         type: string
         required: false
