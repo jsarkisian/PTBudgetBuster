@@ -47,9 +47,7 @@ class Session:
             "data": data,
             "timestamp": datetime.utcnow().isoformat(),
         })
-        # Only save periodically for events (high volume)
-        if len(self.events) % 5 == 0:
-            self._save()
+        self._save()
     
     def add_finding(self, severity: str, title: str, description: str, evidence: str = ""):
         finding = {
@@ -112,6 +110,8 @@ CURRENT FINDINGS:
             "event_count": len(self.events),
             "finding_count": len(self.findings),
             "findings": self.findings,
+            "messages": self.messages,
+            "events": self.events,
             "auto_mode": self.auto_mode,
             "auto_objective": self.auto_objective,
         }
