@@ -283,13 +283,6 @@ async def chat(req: ChatMessage):
     
     session.add_message("user", req.message)
     
-    await broadcast(req.session_id, {
-        "type": "chat_message",
-        "role": "user",
-        "content": req.message,
-        "timestamp": datetime.utcnow().isoformat(),
-    })
-    
     agent = PentestAgent(
         api_key=settings.anthropic_api_key,
         toolbox_url=toolbox_url,
@@ -300,14 +293,6 @@ async def chat(req: ChatMessage):
     response = await agent.chat(req.message)
     
     session.add_message("assistant", response["content"])
-    
-    await broadcast(req.session_id, {
-        "type": "chat_message",
-        "role": "assistant",
-        "content": response["content"],
-        "tool_calls": response.get("tool_calls", []),
-        "timestamp": datetime.utcnow().isoformat(),
-    })
     
     return response
 
