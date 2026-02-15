@@ -112,22 +112,44 @@ function Lightbox({ src, onClose }) {
 }
 
 // Patterns that indicate screenshot file paths in tool output
-const IMAGE_PATH_REGEX = /(?:\/[\w./-]+\.(?:png|jpg|jpeg|gif|webp|bmp))/gi;
-const GOWITNESS_PATH_REGEX = /(?:screenshots?\/[\w./_-]+\.(?:png|jpg|jpeg))/gi;
+// Matches paths like: /opt/pentest/data/screenshots/https---domain.com.jpeg
+// Or: /opt/pentest/output/screenshot/subdomain.domain.com/hash.png
+// Or: screenshots/filename.jpeg
+// Or any path ending in an image extension
+const IMAGE_PATH_REGEX = /(?:\/opt\/pentest\/[^\s"']+\.(?:png|jpg|jpeg|gif|webp|bmp))/gi;
+const REL_SCREENSHOT_REGEX = /(?:(?:screenshots?|output\/screenshot)\/[^\s"']+\.(?:png|jpg|jpeg|gif|webp|bmp))/gi;
+const GENERIC_IMG_PATH_REGEX = /(?:\/[\w./_-]+\.(?:png|jpg|jpeg|gif|webp|bmp))/gi;
 
 function extractImagePaths(text) {
   if (!text) return [];
   const paths = new Set();
 
-  // Match absolute paths
-  const absMatches = text.match(IMAGE_PATH_REGEX) || [];
-  absMatches.forEach(p => paths.add(p));
+  // Match /opt/pentest/... paths (most specific)
+  const optMatches = text.match(IMAGE_PATH_REGEX) || [];
+  optMatches.forEach(p => paths.add(p));
 
   // Match relative screenshot paths
-  const relMatches = text.match(GOWITNESS_PATH_REGEX) || [];
+  const relMatches = text.match(REL_SCREENSHOT_REGEX) || [];
   relMatches.forEach(p => paths.add(p));
 
+  // Match any absolute path to an image
+  const genericMatches = text.match(GENERIC_IMG_PATH_REGEX) || [];
+  genericMatches.forEach(p => {
+    // Skip very short paths that are likely false positives
+    if (p.length > 8) paths.add(p);
+  });
+
   return [...paths];
+}
+
+function buildImageUrl(path) {
+  // Strip /opt/pentest/ prefix if present, since the proxy searches relative to /opt/pentest/
+  let cleanPath = path;
+  if (cleanPath.startsWith('/opt/pentest/')) {
+    cleanPath = cleanPath.replace('/opt/pentest/', '');
+  }
+  // Don't double-encode slashes
+  return `/api/images/${cleanPath}`;
 }
 
 function OutputEntry({ entry, onImageClick }) {
@@ -244,8 +266,7 @@ function ScreenshotThumb({ path, onClick }) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
 
-  // Build the image URL through our API proxy
-  const imageUrl = `/api/images/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
+  const imageUrl = buildImageUrl(path);
 
   if (errored) {
     return (
