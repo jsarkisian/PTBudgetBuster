@@ -283,6 +283,12 @@ async def chat(req: ChatMessage):
     
     session.add_message("user", req.message)
     
+    await broadcast(req.session_id, {
+        "type": "chat_message",
+        "role": "user",
+        "content": req.message,
+        "timestamp": datetime.utcnow().isoformat(),
+    })
     
     agent = PentestAgent(
         api_key=settings.anthropic_api_key,
@@ -399,6 +405,23 @@ async def read_file(path: str):
     async with get_toolbox_client() as client:
         resp = await client.get(f"/files/{path}")
         return resp.json()
+
+@app.get("/api/screenshots")
+async def list_screenshots(directory: str = ""):
+    async with get_toolbox_client() as client:
+        resp = await client.get("/screenshots", params={"directory": directory})
+        return resp.json()
+
+@app.get("/api/images/{path:path}")
+async def proxy_image(path: str):
+    """Proxy image files from the toolbox container."""
+    from fastapi.responses import Response
+    async with get_toolbox_client() as client:
+        resp = await client.get(f"/images/{path}")
+        if resp.status_code == 200:
+            content_type = resp.headers.get("content-type", "image/png")
+            return Response(content=resp.content, media_type=content_type)
+        raise HTTPException(status_code=404, detail="Image not found")
 
 
 # ──────────────────────────────────────────────
