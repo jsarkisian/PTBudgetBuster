@@ -425,6 +425,100 @@ async def proxy_image(path: str):
 
 
 # ──────────────────────────────────────────────
+#  Export / Download
+# ──────────────────────────────────────────────
+
+@app.get("/api/sessions/{session_id}/export")
+async def export_session(session_id: str):
+    """Export all engagement data as a downloadable zip file."""
+    import io
+    import zipfile
+    from fastapi.responses import StreamingResponse
+
+    session = session_mgr.get(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    buf = io.BytesIO()
+    safe_name = session.name.replace(" ", "_").replace("/", "-")[:40]
+
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 1. Session metadata + chat + events + findings as JSON
+        zf.writestr(
+            f"{safe_name}/session.json",
+            json.dumps(session.to_full_dict(), indent=2),
+        )
+
+        # 2. Chat log as readable text
+        chat_lines = []
+        for msg in session.messages:
+            ts = msg.get("timestamp", "")
+            role = msg.get("role", "unknown").upper()
+            content = msg.get("content", "")
+            chat_lines.append(f"[{ts}] {role}:\n{content}\n")
+        if chat_lines:
+            zf.writestr(f"{safe_name}/chat_log.txt", "\n".join(chat_lines))
+
+        # 3. Tool execution log
+        tool_lines = []
+        for evt in session.events:
+            ts = evt.get("timestamp", "")
+            etype = evt.get("type", "")
+            data = evt.get("data", {})
+            if etype in ("tool_exec", "bash_exec"):
+                tool = data.get("tool", "bash")
+                cmd = data.get("command", "")
+                params = data.get("parameters", {})
+                tool_lines.append(f"[{ts}] EXEC {tool}: {cmd or params}")
+            elif etype in ("tool_result", "bash_result"):
+                status = data.get("status", "")
+                output = data.get("output", "")
+                tool_lines.append(f"[{ts}] RESULT ({status}):\n{output}\n")
+        if tool_lines:
+            zf.writestr(f"{safe_name}/tool_log.txt", "\n".join(tool_lines))
+
+        # 4. Findings report
+        if session.findings:
+            findings_lines = [f"FINDINGS REPORT — {session.name}", "=" * 60, ""]
+            for f in session.findings:
+                findings_lines.append(f"[{f['severity'].upper()}] {f['title']}")
+                findings_lines.append(f"  Description: {f['description']}")
+                if f.get("evidence"):
+                    findings_lines.append(f"  Evidence: {f['evidence'][:500]}")
+                findings_lines.append(f"  Discovered: {f.get('timestamp', '')}")
+                findings_lines.append("")
+            zf.writestr(f"{safe_name}/findings_report.txt", "\n".join(findings_lines))
+
+        # 5. Fetch screenshots from toolbox and include them
+        try:
+            async with get_toolbox_client() as client:
+                resp = await client.get("/screenshots")
+                if resp.status_code == 200:
+                    screenshots = resp.json().get("screenshots", [])
+                    for ss in screenshots:
+                        try:
+                            img_resp = await client.get(f"/images/{ss['path']}")
+                            if img_resp.status_code == 200:
+                                zf.writestr(
+                                    f"{safe_name}/screenshots/{ss['name']}",
+                                    img_resp.content,
+                                )
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+    buf.seek(0)
+    filename = f"{safe_name}_export.zip"
+
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ──────────────────────────────────────────────
 #  WebSocket for real-time updates
 # ──────────────────────────────────────────────
 
