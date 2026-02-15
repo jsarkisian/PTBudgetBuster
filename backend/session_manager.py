@@ -47,6 +47,7 @@ class Session:
             "data": data,
             "timestamp": datetime.utcnow().isoformat(),
         })
+        # Only save periodically for events (high volume)
         if len(self.events) % 5 == 0:
             self._save()
     
@@ -64,9 +65,11 @@ class Session:
         return finding
     
     def get_chat_history(self, max_messages: int = 50) -> list[dict]:
+        """Get recent chat history formatted for the AI."""
         return self.messages[-max_messages:]
     
     def get_context_summary(self) -> str:
+        """Build a context summary for the AI agent."""
         scope_str = ", ".join(self.target_scope) if self.target_scope else "Not defined"
         
         recent_results = []
@@ -114,6 +117,7 @@ CURRENT FINDINGS:
         }
     
     def to_full_dict(self) -> dict:
+        """Full serialization for persistence."""
         return {
             "id": self.id,
             "name": self.name,
@@ -127,6 +131,7 @@ CURRENT FINDINGS:
     
     @classmethod
     def from_dict(cls, data: dict) -> "Session":
+        """Restore a session from persisted data."""
         session = cls(
             name=data["name"],
             target_scope=data.get("target_scope", []),
@@ -140,6 +145,7 @@ CURRENT FINDINGS:
         return session
     
     def _save(self):
+        """Persist session to disk."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         path = DATA_DIR / f"{self.id}.json"
         try:
@@ -155,6 +161,7 @@ class SessionManager:
         self._load_all()
     
     def _load_all(self):
+        """Load all sessions from disk on startup."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         loaded = 0
         for path in DATA_DIR.glob("*.json"):
