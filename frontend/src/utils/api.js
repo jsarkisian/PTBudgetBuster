@@ -42,4 +42,10 @@ export const api = {
   // Files
   listFiles: (dir = '') => request(`/files?directory=${encodeURIComponent(dir)}`),
   readFile: (path) => request(`/files/${path}`),
+
+  // Export
+  exportSession: (id) => {
+    // Direct download - don't use request() since it returns a blob not JSON
+    window.open(`${BASE_URL}/sessions/${id}/export`, '_blank');
+  },
 };
