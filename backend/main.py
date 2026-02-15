@@ -131,6 +131,33 @@ async def get_session(session_id: str):
 
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
+    """Delete a session and all associated data."""
+    session = session_mgr.get(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    
+    # Collect task IDs from events to clean up toolbox data directories
+    task_ids = set()
+    for evt in session.events:
+        tid = evt.get("data", {}).get("task_id")
+        if tid:
+            task_ids.add(tid)
+    
+    # Clean up task output directories on toolbox
+    if task_ids:
+        try:
+            async with get_toolbox_client() as client:
+                # Use bash to remove task data dirs
+                dirs = " ".join(f"/opt/pentest/data/{tid}" for tid in task_ids)
+                await client.post("/execute/sync", json={
+                    "tool": "bash",
+                    "parameters": {"command": f"rm -rf {dirs} 2>/dev/null; echo done"},
+                    "task_id": f"cleanup-{session_id[:8]}",
+                    "timeout": 10,
+                })
+        except Exception:
+            pass  # Best effort cleanup
+    
     session_mgr.delete(session_id)
     return {"status": "deleted"}
 
