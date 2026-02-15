@@ -147,7 +147,7 @@ async def list_tools():
 
 @app.post("/api/tools/execute")
 async def execute_tool(req: ToolExecRequest):
-    """Execute a tool in the toolbox container."""
+    """Execute a tool asynchronously in the toolbox container."""
     session = session_mgr.get(req.session_id)
     if not session:
         raise HTTPException(404, "Session not found")
@@ -169,35 +169,62 @@ async def execute_tool(req: ToolExecRequest):
         "timestamp": datetime.utcnow().isoformat(),
     })
     
+    # Launch async - don't block
     async with get_toolbox_client() as client:
-        resp = await client.post("/execute/sync", json={
+        resp = await client.post("/execute", json={
             "tool": req.tool,
             "parameters": req.parameters,
             "task_id": task_id,
             "timeout": req.timeout,
         })
-        result = resp.json()
+        launch_result = resp.json()
     
-    session.add_event("tool_result", {
-        "task_id": task_id,
-        "tool": req.tool,
-        "status": result.get("status"),
-        "output": result.get("output", "")[:5000],  # Truncate for session log
-    })
+    # Poll for result in background
+    asyncio.create_task(_poll_task_result(req.session_id, task_id, req.tool, session))
     
-    await broadcast(req.session_id, {
+    return {"task_id": task_id, "status": "started", "tool": req.tool}
+
+
+async def _poll_task_result(session_id: str, task_id: str, tool: str, session):
+    """Background poll for task completion, then broadcast result."""
+    for _ in range(600):  # Max 10 min polling
+        await asyncio.sleep(1)
+        try:
+            async with get_toolbox_client() as client:
+                resp = await client.get(f"/task/{task_id}")
+                task = resp.json()
+            
+            if task.get("status") in ("completed", "failed", "error", "timeout", "killed"):
+                session.add_event("tool_result", {
+                    "task_id": task_id,
+                    "tool": tool,
+                    "status": task.get("status"),
+                    "output": task.get("output", "")[:5000],
+                })
+                
+                await broadcast(session_id, {
+                    "type": "tool_result",
+                    "task_id": task_id,
+                    "tool": tool,
+                    "result": task,
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
+                return
+        except Exception:
+            pass
+    
+    # Timeout fallback
+    await broadcast(session_id, {
         "type": "tool_result",
         "task_id": task_id,
-        "tool": req.tool,
-        "result": result,
+        "tool": tool,
+        "result": {"status": "timeout", "output": "", "error": "Polling timeout"},
         "timestamp": datetime.utcnow().isoformat(),
     })
-    
-    return result
 
 @app.post("/api/tools/execute/bash")
 async def execute_bash(req: BashExecRequest):
-    """Execute a raw bash command."""
+    """Execute a raw bash command asynchronously."""
     session = session_mgr.get(req.session_id)
     if not session:
         raise HTTPException(404, "Session not found")
@@ -218,29 +245,17 @@ async def execute_bash(req: BashExecRequest):
     })
     
     async with get_toolbox_client() as client:
-        resp = await client.post("/execute/sync", json={
+        resp = await client.post("/execute", json={
             "tool": "bash",
             "parameters": {"command": req.command},
             "task_id": task_id,
             "timeout": req.timeout,
         })
-        result = resp.json()
     
-    session.add_event("bash_result", {
-        "task_id": task_id,
-        "status": result.get("status"),
-        "output": result.get("output", "")[:5000],
-    })
+    # Poll for result in background
+    asyncio.create_task(_poll_task_result(req.session_id, task_id, "bash", session))
     
-    await broadcast(req.session_id, {
-        "type": "tool_result",
-        "task_id": task_id,
-        "tool": "bash",
-        "result": result,
-        "timestamp": datetime.utcnow().isoformat(),
-    })
-    
-    return result
+    return {"task_id": task_id, "status": "started", "tool": "bash"}
 
 @app.get("/api/tasks/{task_id}")
 async def get_task(task_id: str):

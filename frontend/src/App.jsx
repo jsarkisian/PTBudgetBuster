@@ -13,7 +13,7 @@ import NewSessionModal from './components/NewSessionModal';
 export default function App() {
   const [sessions, setSessions] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
-  const [activeTab, setActiveTab] = useState('chat'); // chat | tools | findings | auto
+  const [activeTab, setActiveTab] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [outputs, setOutputs] = useState([]);
   const [findings, setFindings] = useState([]);
@@ -24,7 +24,6 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
 
-  // WebSocket handler
   const handleWsMessage = useCallback((event) => {
     switch (event.type) {
       case 'chat_message':
@@ -35,7 +34,6 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
-
       case 'tool_start':
         setOutputs(prev => [...prev, {
           id: event.task_id,
@@ -46,7 +44,6 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
-
       case 'tool_result':
         setOutputs(prev => [...prev, {
           id: event.task_id,
@@ -57,11 +54,9 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
-
       case 'new_finding':
         setFindings(prev => [...prev, event.finding]);
         break;
-
       case 'auto_step_pending':
         setPendingApproval({
           stepId: event.step_id,
@@ -70,11 +65,9 @@ export default function App() {
           toolCalls: event.tool_calls,
         });
         break;
-
       case 'auto_step_decision':
         setPendingApproval(null);
         break;
-
       case 'auto_mode_changed':
       case 'auto_status':
         setOutputs(prev => [...prev, {
@@ -89,14 +82,12 @@ export default function App() {
 
   const { connected } = useWebSocket(activeSession?.id, handleWsMessage);
 
-  // Load sessions and tools on mount
   useEffect(() => {
     api.health().then(setHealth).catch(() => {});
     api.listSessions().then(setSessions).catch(() => {});
     api.listTools().then(data => setTools(data.tools || {})).catch(() => {});
   }, []);
 
-  // Load session details when active session changes
   useEffect(() => {
     if (activeSession) {
       api.getSession(activeSession.id).then(data => {
@@ -139,7 +130,6 @@ export default function App() {
     if (!activeSession) return;
     setChatLoading(true);
     try {
-      // Optimistic add
       setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
       const response = await api.chat({ message, session_id: activeSession.id });
       setMessages(prev => [...prev, {
@@ -161,26 +151,35 @@ export default function App() {
 
   const handleExecuteTool = async (tool, parameters) => {
     if (!activeSession) return;
-    setToolLoading(true);
     try {
-      const result = await api.executeTool({
+      await api.executeTool({
         session_id: activeSession.id,
         tool,
         parameters,
       });
-      return result;
-    } finally {
-      setToolLoading(false);
+    } catch (err) {
+      setOutputs(prev => [...prev, {
+        id: `err-${Date.now()}`,
+        type: 'result',
+        tool,
+        result: { status: 'error', output: '', error: err.message },
+        timestamp: new Date().toISOString(),
+      }]);
     }
   };
 
   const handleExecuteBash = async (command) => {
     if (!activeSession) return;
-    setToolLoading(true);
     try {
-      return await api.executeBash({ session_id: activeSession.id, command });
-    } finally {
-      setToolLoading(false);
+      await api.executeBash({ session_id: activeSession.id, command });
+    } catch (err) {
+      setOutputs(prev => [...prev, {
+        id: `err-${Date.now()}`,
+        type: 'result',
+        tool: 'bash',
+        result: { status: 'error', output: '', error: err.message },
+        timestamp: new Date().toISOString(),
+      }]);
     }
   };
 
@@ -212,9 +211,7 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col bg-dark-950">
       <Header health={health} connected={connected} session={activeSession} />
-
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
         <SessionSidebar
           sessions={sessions}
           activeSession={activeSession}
@@ -222,11 +219,8 @@ export default function App() {
           onDelete={handleDeleteSession}
           onNew={() => setShowNewSession(true)}
         />
-
-        {/* Main content */}
         {activeSession ? (
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Tabs */}
             <div className="flex border-b border-dark-600 bg-dark-900">
               {[
                 { id: 'chat', label: 'AI Chat' },
@@ -247,10 +241,7 @@ export default function App() {
                 </button>
               ))}
             </div>
-
-            {/* Tab content + output split */}
             <div className="flex-1 flex overflow-hidden">
-              {/* Left: active panel */}
               <div className="flex-1 overflow-hidden">
                 {activeTab === 'chat' && (
                   <ChatPanel
@@ -281,8 +272,6 @@ export default function App() {
                   />
                 )}
               </div>
-
-              {/* Right: output panel */}
               <div className="w-[45%] border-l border-dark-600">
                 <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
               </div>
@@ -301,7 +290,6 @@ export default function App() {
           </div>
         )}
       </div>
-
       {showNewSession && (
         <NewSessionModal
           onClose={() => setShowNewSession(false)}

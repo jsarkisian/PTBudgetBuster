@@ -28,6 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     xvfb \
     ca-certificates \
+    libpcap-dev \
+    build-essential \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Go
@@ -56,7 +59,7 @@ RUN nuclei -update-templates 2>/dev/null || true
 RUN mkdir -p /opt/pentest/data /opt/pentest/configs /opt/pentest/scripts
 
 # Install Python tool server dependencies
-RUN pip3 install fastapi uvicorn aiofiles --break-system-packages
+RUN pip3 install fastapi uvicorn aiofiles pyyaml --break-system-packages
 
 # Copy the tool execution server
 COPY configs/tool_definitions.yaml /opt/pentest/configs/
