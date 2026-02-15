@@ -190,7 +190,10 @@ class PentestAgent:
                     "type": "tool_result",
                     "task_id": task_id,
                     "tool": tool_input["tool"],
-                    "result": result,
+                    "result": {
+                        **result,
+                        "parameters": tool_input.get("parameters", {}),
+                    },
                     "source": "ai_agent",
                     "timestamp": datetime.utcnow().isoformat(),
                 })
