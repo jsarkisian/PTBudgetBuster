@@ -338,6 +338,10 @@ async def serve_image(path: str):
     search_paths = [
         Path(DATA_DIR) / path,
         Path("/opt/pentest") / path,
+        Path("/opt/pentest/data") / path,
+        Path("/opt/pentest/output") / path,
+        Path("/opt/pentest/data/screenshots") / path,
+        Path("/opt/pentest/output/screenshot") / path,
         Path("/tmp") / path,
         Path(path),  # absolute path
     ]
@@ -348,27 +352,35 @@ async def serve_image(path: str):
             if ext in ("png", "jpg", "jpeg", "gif", "webp", "bmp"):
                 return FileResponse(file_path, media_type=f"image/{ext}")
     
-    raise HTTPException(status_code=404, detail="Image not found")
+    raise HTTPException(status_code=404, detail=f"Image not found: {path}")
 
 
 @app.get("/screenshots")
 async def list_screenshots(directory: str = ""):
-    """List all screenshot image files recursively."""
+    """List all screenshot image files recursively from all known locations."""
     image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
     screenshots = []
     
-    search_dirs = [Path(DATA_DIR)]
-    if directory:
-        search_dirs = [Path(DATA_DIR) / directory]
+    # Search all common screenshot directories
+    search_dirs = [
+        Path(DATA_DIR),
+        Path("/opt/pentest/output"),
+    ]
     
     for search_dir in search_dirs:
         if not search_dir.exists():
             continue
         for file_path in search_dir.rglob("*"):
             if file_path.is_file() and file_path.suffix.lower() in image_exts:
+                # Build a path relative to /opt/pentest so the proxy can find it
+                try:
+                    rel_path = str(file_path.relative_to("/opt/pentest"))
+                except ValueError:
+                    rel_path = str(file_path)
                 screenshots.append({
                     "name": file_path.name,
-                    "path": str(file_path.relative_to(DATA_DIR)),
+                    "path": rel_path,
+                    "full_path": str(file_path),
                     "size": file_path.stat().st_size,
                     "modified": datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
                 })
