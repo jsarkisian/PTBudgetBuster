@@ -13,7 +13,7 @@ import NewSessionModal from './components/NewSessionModal';
 export default function App() {
   const [sessions, setSessions] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState('chat'); // chat | tools | findings | auto
   const [messages, setMessages] = useState([]);
   const [outputs, setOutputs] = useState([]);
   const [findings, setFindings] = useState([]);
@@ -24,6 +24,7 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
 
+  // WebSocket handler
   const handleWsMessage = useCallback((event) => {
     switch (event.type) {
       case 'chat_message':
@@ -34,6 +35,7 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
+
       case 'tool_start':
         setOutputs(prev => [...prev, {
           id: event.task_id,
@@ -44,6 +46,7 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
+
       case 'tool_result':
         setOutputs(prev => [...prev, {
           id: event.task_id,
@@ -54,9 +57,11 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
+
       case 'new_finding':
         setFindings(prev => [...prev, event.finding]);
         break;
+
       case 'auto_step_pending':
         setPendingApproval({
           stepId: event.step_id,
@@ -65,9 +70,11 @@ export default function App() {
           toolCalls: event.tool_calls,
         });
         break;
+
       case 'auto_step_decision':
         setPendingApproval(null);
         break;
+
       case 'auto_mode_changed':
       case 'auto_status':
         setOutputs(prev => [...prev, {
@@ -82,16 +89,56 @@ export default function App() {
 
   const { connected } = useWebSocket(activeSession?.id, handleWsMessage);
 
+  // Load sessions and tools on mount
   useEffect(() => {
     api.health().then(setHealth).catch(() => {});
     api.listSessions().then(setSessions).catch(() => {});
     api.listTools().then(data => setTools(data.tools || {})).catch(() => {});
   }, []);
 
+  // Load session details when active session changes
   useEffect(() => {
     if (activeSession) {
       api.getSession(activeSession.id).then(data => {
         setFindings(data.findings || []);
+        // Restore saved messages
+        if (data.messages && data.messages.length > 0) {
+          setMessages(data.messages.map(m => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp,
+          })));
+        }
+        // Restore saved tool outputs from events
+        if (data.events && data.events.length > 0) {
+          const restored = [];
+          data.events.forEach(evt => {
+            if (evt.type === 'tool_exec' || evt.type === 'bash_exec') {
+              restored.push({
+                id: evt.data.task_id,
+                type: 'start',
+                tool: evt.data.tool || 'bash',
+                parameters: evt.data.parameters || { command: evt.data.command },
+                source: evt.data.source || 'manual',
+                timestamp: evt.timestamp,
+              });
+            } else if (evt.type === 'tool_result' || evt.type === 'bash_result') {
+              restored.push({
+                id: evt.data.task_id,
+                type: 'result',
+                tool: evt.data.tool || 'bash',
+                result: {
+                  status: evt.data.status,
+                  output: evt.data.output || '',
+                  error: evt.data.error || '',
+                },
+                source: evt.data.source || 'manual',
+                timestamp: evt.timestamp,
+              });
+            }
+          });
+          setOutputs(restored);
+        }
       }).catch(() => {});
     }
   }, [activeSession?.id]);
@@ -109,9 +156,10 @@ export default function App() {
 
   const handleSelectSession = (session) => {
     setActiveSession(session);
+    // Clear first, then useEffect will load saved data
     setMessages([]);
     setOutputs([]);
-    setFindings(session.findings || []);
+    setFindings([]);
     setPendingApproval(null);
   };
 
@@ -129,11 +177,16 @@ export default function App() {
   const handleSendChat = async (message) => {
     if (!activeSession) return;
     setChatLoading(true);
-    // Add user message locally for immediate feedback
-    setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
     try {
-      await api.chat({ message, session_id: activeSession.id });
-      // Response comes via WebSocket, no need to add here
+      // Optimistic add
+      setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
+      const response = await api.chat({ message, session_id: activeSession.id });
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: response.content,
+        toolCalls: response.tool_calls,
+        timestamp: new Date().toISOString(),
+      }]);
     } catch (err) {
       setMessages(prev => [...prev, {
         role: 'error',
@@ -153,6 +206,7 @@ export default function App() {
         tool,
         parameters,
       });
+      // Result comes via WebSocket, no need to block
     } catch (err) {
       setOutputs(prev => [...prev, {
         id: `err-${Date.now()}`,
@@ -168,6 +222,7 @@ export default function App() {
     if (!activeSession) return;
     try {
       await api.executeBash({ session_id: activeSession.id, command });
+      // Result comes via WebSocket
     } catch (err) {
       setOutputs(prev => [...prev, {
         id: `err-${Date.now()}`,
@@ -207,7 +262,9 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col bg-dark-950">
       <Header health={health} connected={connected} session={activeSession} />
+
       <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar */}
         <SessionSidebar
           sessions={sessions}
           activeSession={activeSession}
@@ -215,8 +272,11 @@ export default function App() {
           onDelete={handleDeleteSession}
           onNew={() => setShowNewSession(true)}
         />
+
+        {/* Main content */}
         {activeSession ? (
           <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Tabs */}
             <div className="flex border-b border-dark-600 bg-dark-900">
               {[
                 { id: 'chat', label: 'AI Chat' },
@@ -237,7 +297,10 @@ export default function App() {
                 </button>
               ))}
             </div>
+
+            {/* Tab content + output split */}
             <div className="flex-1 flex overflow-hidden">
+              {/* Left: active panel */}
               <div className="flex-1 overflow-hidden">
                 {activeTab === 'chat' && (
                   <ChatPanel
@@ -268,6 +331,8 @@ export default function App() {
                   />
                 )}
               </div>
+
+              {/* Right: output panel */}
               <div className="w-[45%] border-l border-dark-600">
                 <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
               </div>
@@ -286,6 +351,7 @@ export default function App() {
           </div>
         )}
       </div>
+
       {showNewSession && (
         <NewSessionModal
           onClose={() => setShowNewSession(false)}
