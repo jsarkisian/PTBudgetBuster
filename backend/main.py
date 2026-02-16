@@ -24,8 +24,6 @@ from jose import jwt, JWTError
 from agent import PentestAgent
 from session_manager import SessionManager, Session
 from user_manager import UserManager
-
-python3 -c "
 import re
 f = open('backend/main.py','r')
 c = f.read()
@@ -54,7 +52,6 @@ f.write(c)
 f.close()
 print('Done')
 "
-docker compose restart backend
 
 class Settings(BaseSettings):
     anthropic_api_key: str = ""
