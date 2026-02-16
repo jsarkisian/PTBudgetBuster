@@ -187,9 +187,10 @@ class UserManager:
         AUTHORIZED_KEYS_FILE.write_text("\n".join(lines) + "\n" if lines else "")
         AUTHORIZED_KEYS_FILE.chmod(0o600)
 
-    def authenticate(self, username: str, password: str) -> Optional[User]:
+    def authenticate(self, username_raw: str, password: str) -> Optional[User]:
         """Authenticate and return user, or None."""
-        user = self.users.get(username)
+        username = username_raw.lower()
+        user = self.users.get(username) or self.users.get(username.lower()) or self.users.get(username.capitalize())
         if user and user.enabled and user.verify_password(password):
             user.last_login = datetime.utcnow().isoformat()
             self._save()
@@ -212,7 +213,7 @@ class UserManager:
             display_name=display_name,
             email=email,
         )
-        self.users[username] = user
+        self.users[username.lower()] = user
         self._save()
         return user
 
@@ -220,7 +221,8 @@ class UserManager:
         self, username: str, display_name: str = None,
         email: str = None, role: str = None, enabled: bool = None,
     ) -> Optional[User]:
-        user = self.users.get(username)
+        username = username_raw.lower()
+        user = self.users.get(username) or self.users.get(username.lower()) or self.users.get(username.capitalize())
         if not user:
             return None
         if display_name is not None:
@@ -237,7 +239,8 @@ class UserManager:
         return user
 
     def change_password(self, username: str, new_password: str) -> bool:
-        user = self.users.get(username)
+        username = username_raw.lower()
+        user = self.users.get(username) or self.users.get(username.lower()) or self.users.get(username.capitalize())
         if not user:
             return False
         user.password_hash = pwd_context.hash(new_password)
@@ -260,7 +263,8 @@ class UserManager:
 
     def add_ssh_key(self, username: str, name: str, pubkey: str) -> dict:
         """Add an SSH public key for a user."""
-        user = self.users.get(username)
+        username = username_raw.lower()
+        user = self.users.get(username) or self.users.get(username.lower()) or self.users.get(username.capitalize())
         if not user:
             raise ValueError("User not found")
 
@@ -289,7 +293,8 @@ class UserManager:
 
     def remove_ssh_key(self, username: str, key_id: str) -> bool:
         """Remove an SSH key by its ID."""
-        user = self.users.get(username)
+        username = username_raw.lower()
+        user = self.users.get(username) or self.users.get(username.lower()) or self.users.get(username.capitalize())
         if not user:
             return False
 
@@ -303,7 +308,8 @@ class UserManager:
         return False
 
     def list_ssh_keys(self, username: str) -> list[dict]:
-        user = self.users.get(username)
+        username = username_raw.lower()
+        user = self.users.get(username) or self.users.get(username.lower()) or self.users.get(username.capitalize())
         if not user:
             return []
         return [
