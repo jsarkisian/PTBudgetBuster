@@ -277,7 +277,12 @@ export default function App() {
               <div className="text-6xl mb-4">🛡️</div>
               <h2 className="text-xl font-semibold text-gray-300 mb-2">PentestMCP</h2>
               <p className="mb-4">Create or select an engagement to begin testing</p>
-              <button onClick={() => setShowNewSession(true)} className="btn-primary">New Engagement</button>
+              <div className="flex gap-3 justify-center">
+                <button onClick={() => setShowNewSession(true)} className="btn-primary">New Engagement</button>
+                <button onClick={() => setActiveTab('admin')} className="px-4 py-2 text-sm bg-dark-700 hover:bg-dark-600 text-gray-300 rounded border border-dark-500 transition-colors">
+                  {currentUser.role === 'admin' ? '👥 Manage Users' : '👤 My Account'}
+                </button>
+              </div>
             </div>
           </div>
         )}
