@@ -25,6 +25,37 @@ from agent import PentestAgent
 from session_manager import SessionManager, Session
 from user_manager import UserManager
 
+python3 -c "
+import re
+f = open('backend/main.py','r')
+c = f.read()
+f.close()
+
+# Add ANSI strip helper
+c = c.replace(
+    'def get_toolbox_client():',
+    'def strip_ansi(text):\n    \"\"\"Remove ANSI escape codes from text.\"\""\n    return re.sub(r\"\x1b\\[[0-9;]*[a-zA-Z]\", \"\", text)\n\n\ndef get_toolbox_client():'
+)
+
+# Apply it in the export - tool log output
+c = c.replace(
+    'tool_lines.append(f\"[{ts}] RESULT ({status}):\\\\n{output}\\\\n\")',
+    'tool_lines.append(f\"[{ts}] RESULT ({status}):\\\\n{strip_ansi(output)}\\\\n\")'
+)
+
+# Apply it in the export - chat log
+c = c.replace(
+    'chat_lines.append(f\"[{ts}] {role}:\\\\n{content}\\\\n\")',
+    'chat_lines.append(f\"[{ts}] {role}:\\\\n{strip_ansi(content)}\\\\n\")'
+)
+
+f = open('backend/main.py','w')
+f.write(c)
+f.close()
+print('Done')
+"
+docker compose restart backend
+
 class Settings(BaseSettings):
     anthropic_api_key: str = ""
     toolbox_host: str = "toolbox"
