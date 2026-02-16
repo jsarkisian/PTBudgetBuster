@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { api } from './utils/api';
+import { api, isAuthenticated, setToken } from './utils/api';
 import { useWebSocket } from './hooks/useWebSocket';
 import Header from './components/Header';
 import SessionSidebar from './components/SessionSidebar';
@@ -8,12 +8,16 @@ import OutputPanel from './components/OutputPanel';
 import ToolPanel from './components/ToolPanel';
 import FindingsPanel from './components/FindingsPanel';
 import AutoPanel from './components/AutoPanel';
+import AdminPanel from './components/AdminPanel';
 import NewSessionModal from './components/NewSessionModal';
+import LoginScreen from './components/LoginScreen';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
-  const [activeTab, setActiveTab] = useState('chat'); // chat | tools | findings | auto
+  const [activeTab, setActiveTab] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [outputs, setOutputs] = useState([]);
   const [findings, setFindings] = useState([]);
@@ -23,6 +27,39 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
+
+  // Check auth on mount
+  useEffect(() => {
+    if (isAuthenticated()) {
+      api.getMe()
+        .then(user => { setCurrentUser(user); setAuthChecked(true); })
+        .catch(() => { setToken(null); setAuthChecked(true); });
+    } else {
+      setAuthChecked(true);
+    }
+  }, []);
+
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    setCurrentUser(null);
+    setActiveSession(null);
+    setMessages([]);
+    setOutputs([]);
+  };
+
+  // Show nothing until auth is checked
+  if (!authChecked) {
+    return <div className="h-screen flex items-center justify-center bg-dark-950 text-gray-500">Loading...</div>;
+  }
+
+  // Show login if not authenticated
+  if (!currentUser) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
 
   // WebSocket handler
   const handleWsMessage = useCallback((event) => {
@@ -37,7 +74,6 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
-
       case 'tool_result':
         setOutputs(prev => [...prev, {
           id: event.task_id,
@@ -48,11 +84,9 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
-
       case 'new_finding':
         setFindings(prev => [...prev, event.finding]);
         break;
-
       case 'auto_step_pending':
         setPendingApproval({
           stepId: event.step_id,
@@ -61,11 +95,9 @@ export default function App() {
           toolCalls: event.tool_calls,
         });
         break;
-
       case 'auto_step_decision':
         setPendingApproval(null);
         break;
-
       case 'auto_mode_changed':
       case 'auto_status':
         setOutputs(prev => [...prev, {
@@ -92,7 +124,6 @@ export default function App() {
     if (activeSession) {
       api.getSession(activeSession.id).then(data => {
         setFindings(data.findings || []);
-        // Restore saved messages
         if (data.messages && data.messages.length > 0) {
           setMessages(data.messages.map(m => ({
             role: m.role,
@@ -100,7 +131,6 @@ export default function App() {
             timestamp: m.timestamp,
           })));
         }
-        // Restore saved tool outputs from events
         if (data.events && data.events.length > 0) {
           const restored = [];
           data.events.forEach(evt => {
@@ -148,7 +178,6 @@ export default function App() {
   const handleSelectSession = (session) => {
     if (activeSession?.id === session.id) return;
     setActiveSession(session);
-    // Clear first, then useEffect will load saved data
     setMessages([]);
     setOutputs([]);
     setFindings([]);
@@ -169,9 +198,8 @@ export default function App() {
   const handleSendChat = async (message) => {
     if (!activeSession) return;
     setChatLoading(true);
+    setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
     try {
-      // Optimistic add
-      setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
       const response = await api.chat({ message, session_id: activeSession.id });
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -193,12 +221,7 @@ export default function App() {
   const handleExecuteTool = async (tool, parameters) => {
     if (!activeSession) return;
     try {
-      await api.executeTool({
-        session_id: activeSession.id,
-        tool,
-        parameters,
-      });
-      // Result comes via WebSocket, no need to block
+      await api.executeTool({ session_id: activeSession.id, tool, parameters });
     } catch (err) {
       setOutputs(prev => [...prev, {
         id: `err-${Date.now()}`,
@@ -214,7 +237,6 @@ export default function App() {
     if (!activeSession) return;
     try {
       await api.executeBash({ session_id: activeSession.id, command });
-      // Result comes via WebSocket
     } catch (err) {
       setOutputs(prev => [...prev, {
         id: `err-${Date.now()}`,
@@ -228,22 +250,13 @@ export default function App() {
 
   const handleApprove = async (stepId, approved) => {
     if (!activeSession) return;
-    await api.approveStep({
-      session_id: activeSession.id,
-      step_id: stepId,
-      approved,
-    });
+    await api.approveStep({ session_id: activeSession.id, step_id: stepId, approved });
     setPendingApproval(null);
   };
 
   const handleStartAuto = async (objective, maxSteps) => {
     if (!activeSession) return;
-    await api.startAutonomous({
-      session_id: activeSession.id,
-      enabled: true,
-      objective,
-      max_steps: maxSteps,
-    });
+    await api.startAutonomous({ session_id: activeSession.id, enabled: true, objective, max_steps: maxSteps });
   };
 
   const handleStopAuto = async () => {
@@ -251,12 +264,18 @@ export default function App() {
     await api.stopAutonomous({ session_id: activeSession.id });
   };
 
+  const tabs = [
+    { id: 'chat', label: 'AI Chat' },
+    { id: 'tools', label: 'Tools' },
+    { id: 'findings', label: `Findings (${findings.length})` },
+    { id: 'auto', label: 'Autonomous' },
+    { id: 'admin', label: currentUser.role === 'admin' ? 'Users' : 'Account' },
+  ];
+
   return (
     <div className="h-screen flex flex-col bg-dark-950">
-      <Header health={health} connected={connected} session={activeSession} />
-
+      <Header health={health} connected={connected} session={activeSession} currentUser={currentUser} onLogout={handleLogout} />
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
         <SessionSidebar
           sessions={sessions}
           activeSession={activeSession}
@@ -264,18 +283,10 @@ export default function App() {
           onDelete={handleDeleteSession}
           onNew={() => setShowNewSession(true)}
         />
-
-        {/* Main content */}
-        {activeSession ? (
+        {activeSession || activeTab === 'admin' ? (
           <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Tabs */}
             <div className="flex border-b border-dark-600 bg-dark-900">
-              {[
-                { id: 'chat', label: 'AI Chat' },
-                { id: 'tools', label: 'Tools' },
-                { id: 'findings', label: `Findings (${findings.length})` },
-                { id: 'auto', label: 'Autonomous' },
-              ].map(tab => (
+              {tabs.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
@@ -289,45 +300,34 @@ export default function App() {
                 </button>
               ))}
             </div>
-
-            {/* Tab content + output split */}
             <div className="flex-1 flex overflow-hidden">
-              {/* Left: active panel */}
               <div className="flex-1 overflow-hidden">
-                {activeTab === 'chat' && (
-                  <ChatPanel
-                    messages={messages}
-                    onSend={handleSendChat}
-                    loading={chatLoading}
-                    session={activeSession}
-                  />
+                {activeTab === 'chat' && activeSession && (
+                  <ChatPanel messages={messages} onSend={handleSendChat} loading={chatLoading} session={activeSession} />
                 )}
-                {activeTab === 'tools' && (
-                  <ToolPanel
-                    tools={tools}
-                    onExecute={handleExecuteTool}
-                    onBash={handleExecuteBash}
-                    loading={toolLoading}
-                  />
+                {activeTab === 'tools' && activeSession && (
+                  <ToolPanel tools={tools} onExecute={handleExecuteTool} onBash={handleExecuteBash} loading={toolLoading} />
                 )}
-                {activeTab === 'findings' && (
+                {activeTab === 'findings' && activeSession && (
                   <FindingsPanel findings={findings} />
                 )}
-                {activeTab === 'auto' && (
-                  <AutoPanel
-                    session={activeSession}
-                    pendingApproval={pendingApproval}
-                    onStart={handleStartAuto}
-                    onStop={handleStopAuto}
-                    onApprove={handleApprove}
-                  />
+                {activeTab === 'auto' && activeSession && (
+                  <AutoPanel session={activeSession} pendingApproval={pendingApproval} onStart={handleStartAuto} onStop={handleStopAuto} onApprove={handleApprove} />
+                )}
+                {activeTab === 'admin' && (
+                  <AdminPanel currentUser={currentUser} />
+                )}
+                {!activeSession && activeTab !== 'admin' && (
+                  <div className="flex-1 flex items-center justify-center text-gray-500 h-full">
+                    <p className="text-sm">Select an engagement to view this tab</p>
+                  </div>
                 )}
               </div>
-
-              {/* Right: output panel */}
-              <div className="w-[45%] border-l border-dark-600">
-                <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
-              </div>
+              {activeTab !== 'admin' && (
+                <div className="w-[45%] border-l border-dark-600">
+                  <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
+                </div>
+              )}
             </div>
           </div>
         ) : (
@@ -343,12 +343,8 @@ export default function App() {
           </div>
         )}
       </div>
-
       {showNewSession && (
-        <NewSessionModal
-          onClose={() => setShowNewSession(false)}
-          onCreate={handleCreateSession}
-        />
+        <NewSessionModal onClose={() => setShowNewSession(false)} onCreate={handleCreateSession} />
       )}
     </div>
   );
