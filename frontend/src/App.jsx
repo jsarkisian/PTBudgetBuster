@@ -28,6 +28,49 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
 
+  // ALL HOOKS MUST BE ABOVE ANY EARLY RETURNS
+
+  const handleWsMessage = useCallback((event) => {
+    switch (event.type) {
+      case 'tool_start':
+        setOutputs(prev => [...prev, {
+          id: event.task_id, type: 'start', tool: event.tool,
+          parameters: event.parameters, source: event.source || 'manual',
+          timestamp: event.timestamp,
+        }]);
+        break;
+      case 'tool_result':
+        setOutputs(prev => [...prev, {
+          id: event.task_id, type: 'result', tool: event.tool,
+          result: event.result, source: event.source || 'manual',
+          timestamp: event.timestamp,
+        }]);
+        break;
+      case 'new_finding':
+        setFindings(prev => [...prev, event.finding]);
+        break;
+      case 'auto_step_pending':
+        setPendingApproval({
+          stepId: event.step_id, stepNumber: event.step_number,
+          description: event.description, toolCalls: event.tool_calls,
+        });
+        break;
+      case 'auto_step_decision':
+        setPendingApproval(null);
+        break;
+      case 'auto_mode_changed':
+      case 'auto_status':
+        setOutputs(prev => [...prev, {
+          id: `auto-${Date.now()}`, type: 'auto_status',
+          message: event.message || (event.enabled ? 'Autonomous mode enabled' : 'Autonomous mode disabled'),
+          timestamp: event.timestamp,
+        }]);
+        break;
+    }
+  }, []);
+
+  const { connected } = useWebSocket(activeSession?.id, handleWsMessage);
+
   // Check auth on mount
   useEffect(() => {
     if (isAuthenticated()) {
@@ -39,80 +82,7 @@ export default function App() {
     }
   }, []);
 
-  const handleLogin = (user) => {
-    setCurrentUser(user);
-  };
-
-  const handleLogout = () => {
-    setToken(null);
-    setCurrentUser(null);
-    setActiveSession(null);
-    setMessages([]);
-    setOutputs([]);
-  };
-
-  // Show nothing until auth is checked
-  if (!authChecked) {
-    return <div className="h-screen flex items-center justify-center bg-dark-950 text-gray-500">Loading...</div>;
-  }
-
-  // Show login if not authenticated
-  if (!currentUser) {
-    return <LoginScreen onLogin={handleLogin} />;
-  }
-
-  // WebSocket handler
-  const handleWsMessage = useCallback((event) => {
-    switch (event.type) {
-      case 'tool_start':
-        setOutputs(prev => [...prev, {
-          id: event.task_id,
-          type: 'start',
-          tool: event.tool,
-          parameters: event.parameters,
-          source: event.source || 'manual',
-          timestamp: event.timestamp,
-        }]);
-        break;
-      case 'tool_result':
-        setOutputs(prev => [...prev, {
-          id: event.task_id,
-          type: 'result',
-          tool: event.tool,
-          result: event.result,
-          source: event.source || 'manual',
-          timestamp: event.timestamp,
-        }]);
-        break;
-      case 'new_finding':
-        setFindings(prev => [...prev, event.finding]);
-        break;
-      case 'auto_step_pending':
-        setPendingApproval({
-          stepId: event.step_id,
-          stepNumber: event.step_number,
-          description: event.description,
-          toolCalls: event.tool_calls,
-        });
-        break;
-      case 'auto_step_decision':
-        setPendingApproval(null);
-        break;
-      case 'auto_mode_changed':
-      case 'auto_status':
-        setOutputs(prev => [...prev, {
-          id: `auto-${Date.now()}`,
-          type: 'auto_status',
-          message: event.message || (event.enabled ? 'Autonomous mode enabled' : 'Autonomous mode disabled'),
-          timestamp: event.timestamp,
-        }]);
-        break;
-    }
-  }, []);
-
-  const { connected } = useWebSocket(activeSession?.id, handleWsMessage);
-
-  // Load sessions and tools after auth
+  // Load data after auth
   useEffect(() => {
     if (!currentUser) return;
     api.health().then(setHealth).catch(() => {});
@@ -122,66 +92,58 @@ export default function App() {
 
   // Load session details when active session changes
   useEffect(() => {
-    if (activeSession) {
-      api.getSession(activeSession.id).then(data => {
-        setFindings(data.findings || []);
-        if (data.messages && data.messages.length > 0) {
-          setMessages(data.messages.map(m => ({
-            role: m.role,
-            content: m.content,
-            timestamp: m.timestamp,
-          })));
-        }
-        if (data.events && data.events.length > 0) {
-          const restored = [];
-          data.events.forEach(evt => {
-            if (evt.type === 'tool_exec' || evt.type === 'bash_exec') {
-              restored.push({
-                id: evt.data.task_id,
-                type: 'start',
-                tool: evt.data.tool || 'bash',
-                parameters: evt.data.parameters || { command: evt.data.command },
-                source: evt.data.source || 'manual',
-                timestamp: evt.timestamp,
-              });
-            } else if (evt.type === 'tool_result' || evt.type === 'bash_result') {
-              restored.push({
-                id: evt.data.task_id,
-                type: 'result',
-                tool: evt.data.tool || 'bash',
-                result: {
-                  status: evt.data.status,
-                  output: evt.data.output || '',
-                  error: evt.data.error || '',
-                },
-                source: evt.data.source || 'manual',
-                timestamp: evt.timestamp,
-              });
-            }
-          });
-          setOutputs(restored);
-        }
-      }).catch(() => {});
-    }
+    if (!activeSession) return;
+    api.getSession(activeSession.id).then(data => {
+      setFindings(data.findings || []);
+      if (data.messages && data.messages.length > 0) {
+        setMessages(data.messages.map(m => ({
+          role: m.role, content: m.content, timestamp: m.timestamp,
+        })));
+      }
+      if (data.events && data.events.length > 0) {
+        const restored = [];
+        data.events.forEach(evt => {
+          if (evt.type === 'tool_exec' || evt.type === 'bash_exec') {
+            restored.push({
+              id: evt.data.task_id, type: 'start',
+              tool: evt.data.tool || 'bash',
+              parameters: evt.data.parameters || { command: evt.data.command },
+              source: evt.data.source || 'manual', timestamp: evt.timestamp,
+            });
+          } else if (evt.type === 'tool_result' || evt.type === 'bash_result') {
+            restored.push({
+              id: evt.data.task_id, type: 'result',
+              tool: evt.data.tool || 'bash',
+              result: { status: evt.data.status, output: evt.data.output || '', error: evt.data.error || '' },
+              source: evt.data.source || 'manual', timestamp: evt.timestamp,
+            });
+          }
+        });
+        setOutputs(restored);
+      }
+    }).catch(() => {});
   }, [activeSession?.id]);
+
+  // NOW safe to do early returns
+  if (!authChecked) {
+    return <div className="h-screen flex items-center justify-center bg-dark-950 text-gray-500">Loading...</div>;
+  }
+  if (!currentUser) {
+    return <LoginScreen onLogin={(user) => { setAuthChecked(true); setCurrentUser(user); }} />;
+  }
 
   const handleCreateSession = async (data) => {
     const session = await api.createSession(data);
     setSessions(prev => [...prev, session]);
     setActiveSession(session);
-    setMessages([]);
-    setOutputs([]);
-    setFindings([]);
-    setPendingApproval(null);
-    setShowNewSession(false);
+    setMessages([]); setOutputs([]); setFindings([]);
+    setPendingApproval(null); setShowNewSession(false);
   };
 
   const handleSelectSession = (session) => {
     if (activeSession?.id === session.id) return;
     setActiveSession(session);
-    setMessages([]);
-    setOutputs([]);
-    setFindings([]);
+    setMessages([]); setOutputs([]); setFindings([]);
     setPendingApproval(null);
   };
 
@@ -189,10 +151,7 @@ export default function App() {
     await api.deleteSession(id);
     setSessions(prev => prev.filter(s => s.id !== id));
     if (activeSession?.id === id) {
-      setActiveSession(null);
-      setMessages([]);
-      setOutputs([]);
-      setFindings([]);
+      setActiveSession(null); setMessages([]); setOutputs([]); setFindings([]);
     }
   };
 
@@ -203,17 +162,11 @@ export default function App() {
     try {
       const response = await api.chat({ message, session_id: activeSession.id });
       setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: response.content,
-        toolCalls: response.tool_calls,
-        timestamp: new Date().toISOString(),
+        role: 'assistant', content: response.content,
+        toolCalls: response.tool_calls, timestamp: new Date().toISOString(),
       }]);
     } catch (err) {
-      setMessages(prev => [...prev, {
-        role: 'error',
-        content: `Error: ${err.message}`,
-        timestamp: new Date().toISOString(),
-      }]);
+      setMessages(prev => [...prev, { role: 'error', content: `Error: ${err.message}`, timestamp: new Date().toISOString() }]);
     } finally {
       setChatLoading(false);
     }
@@ -225,9 +178,7 @@ export default function App() {
       await api.executeTool({ session_id: activeSession.id, tool, parameters });
     } catch (err) {
       setOutputs(prev => [...prev, {
-        id: `err-${Date.now()}`,
-        type: 'result',
-        tool,
+        id: `err-${Date.now()}`, type: 'result', tool,
         result: { status: 'error', output: '', error: err.message },
         timestamp: new Date().toISOString(),
       }]);
@@ -240,29 +191,16 @@ export default function App() {
       await api.executeBash({ session_id: activeSession.id, command });
     } catch (err) {
       setOutputs(prev => [...prev, {
-        id: `err-${Date.now()}`,
-        type: 'result',
-        tool: 'bash',
+        id: `err-${Date.now()}`, type: 'result', tool: 'bash',
         result: { status: 'error', output: '', error: err.message },
         timestamp: new Date().toISOString(),
       }]);
     }
   };
 
-  const handleApprove = async (stepId, approved) => {
-    if (!activeSession) return;
-    await api.approveStep({ session_id: activeSession.id, step_id: stepId, approved });
-    setPendingApproval(null);
-  };
-
-  const handleStartAuto = async (objective, maxSteps) => {
-    if (!activeSession) return;
-    await api.startAutonomous({ session_id: activeSession.id, enabled: true, objective, max_steps: maxSteps });
-  };
-
-  const handleStopAuto = async () => {
-    if (!activeSession) return;
-    await api.stopAutonomous({ session_id: activeSession.id });
+  const handleLogout = () => {
+    setToken(null); setCurrentUser(null); setActiveSession(null);
+    setMessages([]); setOutputs([]);
   };
 
   const tabs = [
@@ -278,10 +216,8 @@ export default function App() {
       <Header health={health} connected={connected} session={activeSession} currentUser={currentUser} onLogout={handleLogout} />
       <div className="flex-1 flex overflow-hidden">
         <SessionSidebar
-          sessions={sessions}
-          activeSession={activeSession}
-          onSelect={handleSelectSession}
-          onDelete={handleDeleteSession}
+          sessions={sessions} activeSession={activeSession}
+          onSelect={handleSelectSession} onDelete={handleDeleteSession}
           onNew={() => setShowNewSession(true)}
         />
         {activeSession || activeTab === 'admin' ? (
@@ -313,7 +249,11 @@ export default function App() {
                   <FindingsPanel findings={findings} />
                 )}
                 {activeTab === 'auto' && activeSession && (
-                  <AutoPanel session={activeSession} pendingApproval={pendingApproval} onStart={handleStartAuto} onStop={handleStopAuto} onApprove={handleApprove} />
+                  <AutoPanel session={activeSession} pendingApproval={pendingApproval}
+                    onStart={async (obj, steps) => { await api.startAutonomous({ session_id: activeSession.id, enabled: true, objective: obj, max_steps: steps }); }}
+                    onStop={async () => { await api.stopAutonomous({ session_id: activeSession.id }); }}
+                    onApprove={async (stepId, approved) => { await api.approveStep({ session_id: activeSession.id, step_id: stepId, approved }); setPendingApproval(null); }}
+                  />
                 )}
                 {activeTab === 'admin' && (
                   <AdminPanel currentUser={currentUser} />
@@ -337,9 +277,7 @@ export default function App() {
               <div className="text-6xl mb-4">🛡️</div>
               <h2 className="text-xl font-semibold text-gray-300 mb-2">PentestMCP</h2>
               <p className="mb-4">Create or select an engagement to begin testing</p>
-              <button onClick={() => setShowNewSession(true)} className="btn-primary">
-                New Engagement
-              </button>
+              <button onClick={() => setShowNewSession(true)} className="btn-primary">New Engagement</button>
             </div>
           </div>
         )}
