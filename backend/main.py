@@ -13,19 +13,23 @@ from typing import Optional
 
 import anthropic
 import httpx
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
+from jose import jwt, JWTError
 
 from agent import PentestAgent
 from session_manager import SessionManager, Session
+from user_manager import UserManager
 
 class Settings(BaseSettings):
     anthropic_api_key: str = ""
     toolbox_host: str = "toolbox"
     toolbox_port: int = 9500
     jwt_secret: str = "change-me-in-production"
+    jwt_expire_hours: int = 24
     allowed_origins: str = "http://localhost:3000"
 
     class Config:
@@ -46,10 +50,45 @@ app.add_middleware(
 
 # Core services
 session_mgr = SessionManager()
+user_mgr = UserManager()
 toolbox_url = f"http://{settings.toolbox_host}:{settings.toolbox_port}"
 
 # Connected WebSocket clients per session
 ws_clients: dict[str, list[WebSocket]] = {}
+
+security = HTTPBearer(auto_error=False)
+
+
+def create_token(username: str, role: str) -> str:
+    expire = datetime.utcnow() + timedelta(hours=settings.jwt_expire_hours)
+    return jwt.encode(
+        {"sub": username, "role": role, "exp": expire},
+        settings.jwt_secret,
+        algorithm="HS256",
+    )
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Extract and validate JWT token, return user."""
+    if not credentials:
+        raise HTTPException(401, "Not authenticated")
+    try:
+        payload = jwt.decode(credentials.credentials, settings.jwt_secret, algorithms=["HS256"])
+        username = payload.get("sub")
+        if not username:
+            raise HTTPException(401, "Invalid token")
+        user = user_mgr.get_user(username)
+        if not user or not user.enabled:
+            raise HTTPException(401, "User disabled or not found")
+        return user
+    except JWTError:
+        raise HTTPException(401, "Invalid or expired token")
+
+
+async def require_admin(user=Depends(get_current_user)):
+    if user.role != "admin":
+        raise HTTPException(403, "Admin access required")
+    return user
 
 
 def get_toolbox_client():
@@ -552,6 +591,145 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     except WebSocketDisconnect:
         if session_id in ws_clients:
             ws_clients[session_id].remove(websocket)
+
+
+# ──────────────────────────────────────────────
+#  Authentication
+# ──────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.post("/api/auth/login")
+async def login(req: LoginRequest):
+    user = user_mgr.authenticate(req.username, req.password)
+    if not user:
+        raise HTTPException(401, "Invalid credentials")
+    token = create_token(user.username, user.role)
+    return {
+        "token": token,
+        "user": user.to_dict(),
+    }
+
+@app.get("/api/auth/me")
+async def get_me(user=Depends(get_current_user)):
+    return user.to_dict()
+
+@app.post("/api/auth/change-password")
+async def change_password(req: ChangePasswordRequest, user=Depends(get_current_user)):
+    if not user.verify_password(req.current_password):
+        raise HTTPException(400, "Current password is incorrect")
+    user_mgr.change_password(user.username, req.new_password)
+    return {"status": "password_changed"}
+
+
+# ──────────────────────────────────────────────
+#  User Management (admin only)
+# ──────────────────────────────────────────────
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "operator"
+    display_name: str = ""
+    email: str = ""
+
+class UpdateUserRequest(BaseModel):
+    display_name: str = None
+    email: str = None
+    role: str = None
+    enabled: bool = None
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+class AddSSHKeyRequest(BaseModel):
+    name: str
+    pubkey: str
+
+@app.get("/api/users")
+async def list_users(admin=Depends(require_admin)):
+    return [u.to_dict() for u in user_mgr.list_users()]
+
+@app.post("/api/users")
+async def create_user(req: CreateUserRequest, admin=Depends(require_admin)):
+    try:
+        user = user_mgr.create_user(
+            username=req.username,
+            password=req.password,
+            role=req.role,
+            display_name=req.display_name,
+            email=req.email,
+        )
+        return user.to_dict()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.get("/api/users/{username}")
+async def get_user(username: str, admin=Depends(require_admin)):
+    user = user_mgr.get_user(username)
+    if not user:
+        raise HTTPException(404, "User not found")
+    return user.to_dict()
+
+@app.put("/api/users/{username}")
+async def update_user(username: str, req: UpdateUserRequest, admin=Depends(require_admin)):
+    user = user_mgr.update_user(
+        username=username,
+        display_name=req.display_name,
+        email=req.email,
+        role=req.role,
+        enabled=req.enabled,
+    )
+    if not user:
+        raise HTTPException(404, "User not found")
+    return user.to_dict()
+
+@app.delete("/api/users/{username}")
+async def delete_user(username: str, admin=Depends(require_admin)):
+    if username == "admin":
+        raise HTTPException(400, "Cannot delete the admin user")
+    if not user_mgr.delete_user(username):
+        raise HTTPException(404, "User not found")
+    return {"status": "deleted"}
+
+@app.post("/api/users/{username}/reset-password")
+async def reset_password(username: str, req: ResetPasswordRequest, admin=Depends(require_admin)):
+    if not user_mgr.change_password(username, req.new_password):
+        raise HTTPException(404, "User not found")
+    return {"status": "password_reset"}
+
+# SSH Key endpoints
+@app.get("/api/users/{username}/ssh-keys")
+async def list_ssh_keys(username: str, user=Depends(get_current_user)):
+    # Users can see their own keys, admins can see anyone's
+    if user.username != username and user.role != "admin":
+        raise HTTPException(403, "Access denied")
+    return user_mgr.list_ssh_keys(username)
+
+@app.post("/api/users/{username}/ssh-keys")
+async def add_ssh_key(username: str, req: AddSSHKeyRequest, user=Depends(get_current_user)):
+    # Users can add their own keys, admins can add for anyone
+    if user.username != username and user.role != "admin":
+        raise HTTPException(403, "Access denied")
+    try:
+        key = user_mgr.add_ssh_key(username, req.name, req.pubkey)
+        return key
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.delete("/api/users/{username}/ssh-keys/{key_id}")
+async def remove_ssh_key(username: str, key_id: str, user=Depends(get_current_user)):
+    if user.username != username and user.role != "admin":
+        raise HTTPException(403, "Access denied")
+    if not user_mgr.remove_ssh_key(username, key_id):
+        raise HTTPException(404, "SSH key not found")
+    return {"status": "deleted"}
 
 
 # ──────────────────────────────────────────────
