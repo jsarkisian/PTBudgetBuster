@@ -1,10 +1,35 @@
 const BASE_URL = '/api';
 
+let authToken = localStorage.getItem('auth_token') || null;
+
+export function setToken(token) {
+  authToken = token;
+  if (token) {
+    localStorage.setItem('auth_token', token);
+  } else {
+    localStorage.removeItem('auth_token');
+  }
+}
+
+export function getToken() {
+  return authToken;
+}
+
+export function isAuthenticated() {
+  return !!authToken;
+}
+
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
-    ...options,
-  });
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+  const res = await fetch(`${BASE_URL}${path}`, { headers, ...options });
+  if (res.status === 401) {
+    setToken(null);
+    window.location.reload();
+    throw new Error('Session expired');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || 'Request failed');
@@ -13,6 +38,15 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  // Auth
+  login: (username, password) => request('/auth/login', {
+    method: 'POST', body: JSON.stringify({ username, password }),
+  }),
+  getMe: () => request('/auth/me'),
+  changePassword: (current_password, new_password) => request('/auth/change-password', {
+    method: 'POST', body: JSON.stringify({ current_password, new_password }),
+  }),
+
   // Health
   health: () => request('/health'),
 
@@ -45,7 +79,35 @@ export const api = {
 
   // Export
   exportSession: (id) => {
-    // Direct download - don't use request() since it returns a blob not JSON
-    window.open(`${BASE_URL}/sessions/${id}/export`, '_blank');
+    const url = `${BASE_URL}/sessions/${id}/export`;
+    // Add auth header via fetch for download
+    fetch(url, {
+      headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+    })
+      .then(res => res.blob())
+      .then(blob => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `engagement_export.zip`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      });
   },
+
+  // Users (admin)
+  listUsers: () => request('/users'),
+  createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
+  getUser: (username) => request(`/users/${username}`),
+  updateUser: (username, data) => request(`/users/${username}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteUser: (username) => request(`/users/${username}`, { method: 'DELETE' }),
+  resetPassword: (username, new_password) => request(`/users/${username}/reset-password`, {
+    method: 'POST', body: JSON.stringify({ new_password }),
+  }),
+
+  // SSH Keys
+  listSSHKeys: (username) => request(`/users/${username}/ssh-keys`),
+  addSSHKey: (username, name, pubkey) => request(`/users/${username}/ssh-keys`, {
+    method: 'POST', body: JSON.stringify({ name, pubkey }),
+  }),
+  removeSSHKey: (username, keyId) => request(`/users/${username}/ssh-keys/${keyId}`, { method: 'DELETE' }),
 };
