@@ -1,4 +1,4 @@
-#version: "3.8"
+version: "3.8"
 
 services:
   toolbox:
@@ -29,6 +29,7 @@ services:
     volumes:
       - scan-data:/opt/pentest/data
       - ./backend:/app
+      - /root/.ssh:/root/.ssh
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - TOOLBOX_HOST=toolbox
