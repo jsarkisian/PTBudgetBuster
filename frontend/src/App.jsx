@@ -112,12 +112,13 @@ export default function App() {
 
   const { connected } = useWebSocket(activeSession?.id, handleWsMessage);
 
-  // Load sessions and tools on mount
+  // Load sessions and tools after auth
   useEffect(() => {
+    if (!currentUser) return;
     api.health().then(setHealth).catch(() => {});
     api.listSessions().then(setSessions).catch(() => {});
     api.listTools().then(data => setTools(data.tools || {})).catch(() => {});
-  }, []);
+  }, [currentUser]);
 
   // Load session details when active session changes
   useEffect(() => {
