@@ -146,6 +146,7 @@ export default function App() {
   };
 
   const handleSelectSession = (session) => {
+    if (activeSession?.id === session.id) return;
     setActiveSession(session);
     // Clear first, then useEffect will load saved data
     setMessages([]);
