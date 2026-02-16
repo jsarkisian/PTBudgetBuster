@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Header({ health, connected, session }) {
+export default function Header({ health, connected, session, currentUser, onLogout }) {
   return (
     <header className="h-12 bg-dark-900 border-b border-dark-600 flex items-center px-4 justify-between shrink-0">
       <div className="flex items-center gap-3">
@@ -14,18 +14,30 @@ export default function Header({ health, connected, session }) {
         )}
       </div>
       <div className="flex items-center gap-4 text-xs">
-        <StatusDot
-          ok={health?.ai_configured}
-          label="AI"
-        />
-        <StatusDot
-          ok={health?.toolbox === 'connected'}
-          label="Toolbox"
-        />
-        <StatusDot
-          ok={connected}
-          label="WS"
-        />
+        <StatusDot ok={health?.ai_configured} label="AI" />
+        <StatusDot ok={health?.toolbox === 'connected'} label="Toolbox" />
+        <StatusDot ok={connected} label="WS" />
+        {currentUser && (
+          <div className="flex items-center gap-2 ml-2 pl-2 border-l border-dark-600">
+            <span className="text-gray-400">
+              {currentUser.display_name || currentUser.username}
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+              currentUser.role === 'admin' ? 'bg-accent-red/20 text-accent-red' :
+              currentUser.role === 'operator' ? 'bg-accent-blue/20 text-accent-blue' :
+              'bg-gray-600/20 text-gray-400'
+            }`}>
+              {currentUser.role}
+            </span>
+            <button
+              onClick={onLogout}
+              className="text-gray-500 hover:text-gray-300 transition-colors ml-1"
+              title="Sign out"
+            >
+              ⏻
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
