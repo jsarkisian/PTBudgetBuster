@@ -42,7 +42,37 @@ You can execute security tools through the `execute_tool` function. Available to
 - **sslscan**: SSL/TLS configuration scanning
 - **nikto**: Web server vulnerability scanning
 - **masscan**: High-speed port scanning
+- **gobuster**: Directory/file brute-forcing and DNS subdomain enumeration
+- **sqlmap**: SQL injection detection and exploitation (use --batch flag)
+- **hydra**: Network login brute-forcer (SSH, FTP, HTTP, etc.)
+- **wpscan**: WordPress security scanner
+- **enum4linux**: Windows/SMB enumeration
+- **smbclient/smbmap**: SMB share enumeration
+- **dnsrecon**: DNS enumeration (zone transfers, brute-force, SRV records)
+- **theharvester**: Email, subdomain, and people name harvester
+- **amass**: Advanced subdomain enumeration
+- **gospider**: Web spider for link extraction
+- **gau**: Fetch known URLs from Wayback, Common Crawl, OTX
+- **crackmapexec**: SMB/WinRM/LDAP/MSSQL network pentesting
+- **responder**: LLMNR/NBT-NS poisoner (use -A for analyze mode)
+- **nbtscan**: NetBIOS name scanning
+- **snmpwalk**: SNMP enumeration
+- **fierce**: DNS recon for non-contiguous IP space
+- **wfuzz**: Web application fuzzer
+- **testssl**: Comprehensive SSL/TLS testing
+- **uncover**: Search Shodan/Censys for exposed hosts
 - **bash**: Custom commands and tool chaining
+
+## Wordlists
+Common wordlist paths available:
+- /usr/share/seclists/Discovery/Web-Content/common.txt
+- /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt
+- /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt
+- /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt
+- /usr/share/seclists/Passwords/Common-Credentials/top-1000000.txt
+- /usr/share/seclists/Usernames/top-usernames-shortlist.txt
+- /usr/share/wordlists/rockyou.txt
+- /usr/share/wordlists/dirb/common.txt
 
 ## Rules
 1. ONLY run the EXACT tool(s) the user asks for. If the user says "run subfinder on X", run ONLY subfinder on X and NOTHING else.

@@ -552,3 +552,528 @@ tools:
         required: true
         positional: true
         description: "Bash command to execute"
+
+  gobuster:
+    name: gobuster
+    description: "Directory/file brute-forcing and DNS subdomain enumeration"
+    binary: /usr/bin/gobuster
+    category: discovery
+    risk_level: medium
+    default_args: []
+    parameters:
+      mode:
+        type: string
+        required: true
+        description: "Mode: dir, dns, vhost, fuzz, s3, gcs, tftp"
+      url:
+        type: string
+        required: false
+        flag: "-u"
+        description: "Target URL (for dir/vhost mode)"
+      domain:
+        type: string
+        required: false
+        flag: "-d"
+        description: "Target domain (for dns mode)"
+      wordlist:
+        type: string
+        required: false
+        flag: "-w"
+        description: "Wordlist path (default: /usr/share/seclists/Discovery/Web-Content/common.txt)"
+      threads:
+        type: integer
+        required: false
+        flag: "-t"
+        description: "Number of threads"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file"
+
+  sqlmap:
+    name: sqlmap
+    description: "Automatic SQL injection detection and exploitation"
+    binary: /usr/bin/sqlmap
+    category: exploitation
+    risk_level: high
+    default_args: ["--batch"]
+    parameters:
+      url:
+        type: string
+        required: false
+        flag: "-u"
+        description: "Target URL with parameter"
+      request_file:
+        type: string
+        required: false
+        flag: "-r"
+        description: "Load HTTP request from file"
+      dbs:
+        type: boolean
+        required: false
+        flag: "--dbs"
+        description: "Enumerate databases"
+      tables:
+        type: boolean
+        required: false
+        flag: "--tables"
+        description: "Enumerate tables"
+      level:
+        type: integer
+        required: false
+        flag: "--level"
+        description: "Level of tests (1-5)"
+      risk:
+        type: integer
+        required: false
+        flag: "--risk"
+        description: "Risk of tests (1-3)"
+      output_dir:
+        type: string
+        required: false
+        flag: "--output-dir"
+        description: "Output directory"
+
+  hydra:
+    name: hydra
+    description: "Fast network login brute-forcer supporting many protocols"
+    binary: /usr/bin/hydra
+    category: exploitation
+    risk_level: high
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        description: "Target host"
+      service:
+        type: string
+        required: true
+        flag: ""
+        description: "Service to attack (ssh, ftp, http-get, etc.)"
+      login:
+        type: string
+        required: false
+        flag: "-l"
+        description: "Single username"
+      login_list:
+        type: string
+        required: false
+        flag: "-L"
+        description: "Username wordlist"
+      password:
+        type: string
+        required: false
+        flag: "-p"
+        description: "Single password"
+      password_list:
+        type: string
+        required: false
+        flag: "-P"
+        description: "Password wordlist"
+      threads:
+        type: integer
+        required: false
+        flag: "-t"
+        description: "Number of threads"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file"
+
+  wpscan:
+    name: wpscan
+    description: "WordPress security scanner"
+    binary: /usr/bin/wpscan
+    category: vulnerability_scanning
+    risk_level: medium
+    default_args: ["--no-banner"]
+    parameters:
+      url:
+        type: string
+        required: true
+        flag: "--url"
+        description: "Target WordPress URL"
+      enumerate:
+        type: string
+        required: false
+        flag: "--enumerate"
+        description: "Enumerate: p (plugins), t (themes), u (users), vp (vulnerable plugins)"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file"
+      format:
+        type: string
+        required: false
+        flag: "-f"
+        description: "Output format (cli, json)"
+
+  enum4linux:
+    name: enum4linux
+    description: "Windows/SMB enumeration tool"
+    binary: /usr/bin/enum4linux
+    category: reconnaissance
+    risk_level: medium
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        description: "Target IP address"
+      all:
+        type: boolean
+        required: false
+        flag: "-a"
+        description: "Do all simple enumeration"
+      users:
+        type: boolean
+        required: false
+        flag: "-U"
+        description: "Get userlist"
+      shares:
+        type: boolean
+        required: false
+        flag: "-S"
+        description: "Get share list"
+
+  smbclient:
+    name: smbclient
+    description: "SMB/CIFS client for accessing shared resources"
+    binary: /usr/bin/smbclient
+    category: reconnaissance
+    risk_level: medium
+    default_args: ["-N"]
+    parameters:
+      target:
+        type: string
+        required: true
+        flag: "-L"
+        description: "List shares on target"
+
+  smbmap:
+    name: smbmap
+    description: "SMB share enumeration and access checker"
+    binary: /usr/bin/smbmap
+    category: reconnaissance
+    risk_level: medium
+    default_args: []
+    parameters:
+      host:
+        type: string
+        required: true
+        flag: "-H"
+        description: "Target host"
+      username:
+        type: string
+        required: false
+        flag: "-u"
+        description: "Username"
+      password:
+        type: string
+        required: false
+        flag: "-p"
+        description: "Password"
+      domain:
+        type: string
+        required: false
+        flag: "-d"
+        description: "Domain"
+
+  dnsrecon:
+    name: dnsrecon
+    description: "DNS enumeration and reconnaissance"
+    binary: /usr/bin/dnsrecon
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      domain:
+        type: string
+        required: true
+        flag: "-d"
+        description: "Target domain"
+      type:
+        type: string
+        required: false
+        flag: "-t"
+        description: "Scan type: std, brt, srv, axfr, rvl"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file (CSV)"
+
+  theharvester:
+    name: theharvester
+    description: "Email, subdomain, and people name harvester"
+    binary: /usr/bin/theHarvester
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      domain:
+        type: string
+        required: true
+        flag: "-d"
+        description: "Target domain"
+      source:
+        type: string
+        required: false
+        flag: "-b"
+        description: "Data source (google, bing, linkedin, all)"
+      limit:
+        type: integer
+        required: false
+        flag: "-l"
+        description: "Limit results"
+
+  amass:
+    name: amass
+    description: "Advanced subdomain enumeration and network mapping"
+    binary: /usr/bin/amass
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      subcommand:
+        type: string
+        required: true
+        description: "Subcommand: enum, intel, viz, track, db"
+      domain:
+        type: string
+        required: false
+        flag: "-d"
+        description: "Target domain"
+      passive:
+        type: boolean
+        required: false
+        flag: "-passive"
+        description: "Passive enumeration only"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file"
+
+  gospider:
+    name: gospider
+    description: "Fast web spider for crawling and link extraction"
+    binary: /root/go/bin/gospider
+    category: discovery
+    risk_level: low
+    default_args: []
+    parameters:
+      site:
+        type: string
+        required: true
+        flag: "-s"
+        description: "Target site URL"
+      depth:
+        type: integer
+        required: false
+        flag: "-d"
+        description: "Crawl depth"
+      concurrent:
+        type: integer
+        required: false
+        flag: "-c"
+        description: "Concurrent requests"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output directory"
+
+  gau:
+    name: gau
+    description: "Fetch known URLs from AlienVault OTX, Wayback Machine, and Common Crawl"
+    binary: /root/go/bin/gau
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        description: "Target domain"
+      output:
+        type: string
+        required: false
+        flag: "-o"
+        description: "Output file"
+      providers:
+        type: string
+        required: false
+        flag: "--providers"
+        description: "Providers: wayback, commoncrawl, otx, urlscan"
+
+  crackmapexec:
+    name: crackmapexec
+    description: "Network pentest tool for SMB, WinRM, LDAP, MSSQL, SSH"
+    binary: /usr/bin/crackmapexec
+    category: exploitation
+    risk_level: high
+    default_args: []
+    parameters:
+      protocol:
+        type: string
+        required: true
+        description: "Protocol: smb, winrm, ldap, mssql, ssh"
+      target:
+        type: string
+        required: true
+        description: "Target IP/range/CIDR"
+      username:
+        type: string
+        required: false
+        flag: "-u"
+        description: "Username"
+      password:
+        type: string
+        required: false
+        flag: "-p"
+        description: "Password"
+      shares:
+        type: boolean
+        required: false
+        flag: "--shares"
+        description: "Enumerate shares"
+
+  responder:
+    name: responder
+    description: "LLMNR/NBT-NS/MDNS poisoner for credential capture"
+    binary: /usr/bin/responder
+    category: exploitation
+    risk_level: high
+    default_args: []
+    parameters:
+      interface:
+        type: string
+        required: true
+        flag: "-I"
+        description: "Network interface"
+      analyze:
+        type: boolean
+        required: false
+        flag: "-A"
+        description: "Analyze mode (passive, no poisoning)"
+
+  nbtscan:
+    name: nbtscan
+    description: "NetBIOS name scanner"
+    binary: /usr/bin/nbtscan
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        description: "Target IP/range (e.g., 192.168.1.0/24)"
+
+  snmpwalk:
+    name: snmpwalk
+    description: "SNMP MIB tree walker for network device enumeration"
+    binary: /usr/bin/snmpwalk
+    category: reconnaissance
+    risk_level: low
+    default_args: ["-v2c"]
+    parameters:
+      target:
+        type: string
+        required: true
+        description: "Target IP"
+      community:
+        type: string
+        required: false
+        flag: "-c"
+        description: "Community string (default: public)"
+
+  fierce:
+    name: fierce
+    description: "DNS reconnaissance tool for locating non-contiguous IP space"
+    binary: /usr/bin/fierce
+    category: reconnaissance
+    risk_level: low
+    default_args: []
+    parameters:
+      domain:
+        type: string
+        required: true
+        flag: "--domain"
+        description: "Target domain"
+      subdomains:
+        type: string
+        required: false
+        flag: "--subdomains"
+        description: "Wordlist for subdomain brute-force"
+
+  wfuzz:
+    name: wfuzz
+    description: "Web application fuzzer"
+    binary: /usr/bin/wfuzz
+    category: discovery
+    risk_level: medium
+    default_args: []
+    parameters:
+      url:
+        type: string
+        required: true
+        flag: "-u"
+        description: "Target URL with FUZZ keyword"
+      wordlist:
+        type: string
+        required: true
+        flag: "-w"
+        description: "Wordlist path"
+      hide_code:
+        type: string
+        required: false
+        flag: "--hc"
+        description: "Hide responses with these codes (e.g., 404)"
+
+  testssl:
+    name: testssl
+    description: "Comprehensive SSL/TLS testing"
+    binary: /usr/bin/testssl
+    category: vulnerability_scanning
+    risk_level: low
+    default_args: []
+    parameters:
+      target:
+        type: string
+        required: true
+        description: "Target host:port"
+      output:
+        type: string
+        required: false
+        flag: "--htmlfile"
+        description: "Save HTML report"
+
+  uncover:
+    name: uncover
+    description: "Discover exposed hosts using multiple search engines (Shodan, Censys, etc.)"
+    binary: /root/go/bin/uncover
+    category: reconnaissance
+    risk_level: low
+    default_args: ["-silent"]
+    parameters:
+      query:
+        type: string
+        required: true
+        flag: "-q"
+        description: "Search query"
+      engine:
+        type: string
+        required: false
+        flag: "-e"
+        description: "Engine: shodan, censys, fofa, hunter, quake"
+      limit:
+        type: integer
+        required: false
+        flag: "-limit"
+        description: "Result limit"
