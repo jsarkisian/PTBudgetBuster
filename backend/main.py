@@ -9,6 +9,7 @@ import json
 import os
 import uuid
 import re
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -91,6 +92,10 @@ async def require_admin(user=Depends(get_current_user)):
         raise HTTPException(403, "Admin access required")
     return user
 
+
+def strip_ansi(text):
+    """Remove ANSI escape codes from text."""
+    return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", str(text))
 
 def get_toolbox_client():
     return httpx.AsyncClient(base_url=toolbox_url, timeout=600.0)
@@ -507,7 +512,7 @@ async def export_session(session_id: str):
             ts = msg.get("timestamp", "")
             role = msg.get("role", "unknown").upper()
             content = msg.get("content", "")
-            chat_lines.append(f"[{ts}] {role}:\n{content}\n")
+            chat_lines.append(f"[{ts}] {role}:\n{strip_ansi(content)}\n")
         if chat_lines:
             zf.writestr(f"{safe_name}/chat_log.txt", "\n".join(chat_lines))
 
@@ -521,11 +526,25 @@ async def export_session(session_id: str):
                 tool = data.get("tool", "bash")
                 cmd = data.get("command", "")
                 params = data.get("parameters", {})
-                tool_lines.append(f"[{ts}] EXEC {tool}: {cmd or params}")
+                if cmd:
+                    tool_lines.append(f"[{ts}] ━━━ {tool} ━━━")
+                    tool_lines.append(f"  $ {cmd}")
+                elif params:
+                    binary = tool
+                    flags = []
+                    for k, v in params.items():
+                        if isinstance(v, bool) and v:
+                            flags.append(f"--{k}")
+                        elif v is not None and v != "":
+                            flags.append(f"--{k} {v}")
+                    tool_lines.append(f"[{ts}] ━━━ {tool} ━━━")
+                    tool_lines.append(f"  $ {binary} {" ".join(flags)}")
+                else:
+                    tool_lines.append(f"[{ts}] ━━━ {tool} ━━━")
             elif etype in ("tool_result", "bash_result"):
                 status = data.get("status", "")
                 output = data.get("output", "")
-                tool_lines.append(f"[{ts}] RESULT ({status}):\n{output}\n")
+                tool_lines.append(f"[{ts}] RESULT ({status}):\n{strip_ansi(output)}\n")
         if tool_lines:
             zf.writestr(f"{safe_name}/tool_log.txt", "\n".join(tool_lines))
 

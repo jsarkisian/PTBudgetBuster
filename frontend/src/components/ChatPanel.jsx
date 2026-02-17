@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function ChatPanel({ messages, onSend, loading, session }) {
+export default function ChatPanel({ messages, onSend, loading, session, onCancel }) {
   const [input, setInput] = useState('');
   const messagesEnd = useRef(null);
 
@@ -52,13 +52,19 @@ export default function ChatPanel({ messages, onSend, loading, session }) {
         ))}
 
         {loading && (
-          <div className="flex items-center gap-2 text-gray-400 text-sm">
+          <div className="flex items-center gap-3 text-gray-400 text-sm">
             <div className="flex gap-1">
               <span className="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <span className="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <span className="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
             Thinking...
+            <button
+              onClick={onCancel}
+              className="ml-2 px-3 py-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
+            >
+              ■ Stop
+            </button>
           </div>
         )}
         <div ref={messagesEnd} />
@@ -75,13 +81,23 @@ export default function ChatPanel({ messages, onSend, loading, session }) {
             className="input flex-1"
             disabled={loading}
           />
-          <button
-            type="submit"
-            disabled={!input.trim() || loading}
-            className="btn-primary px-4"
-          >
-            Send
-          </button>
+          {loading ? (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
+            >
+              ■ Stop
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="btn-primary px-4"
+            >
+              Send
+            </button>
+          )}
         </div>
       </form>
     </div>

@@ -27,6 +27,7 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
+  const chatAbortRef = React.useRef(null);
 
   // ALL HOOKS MUST BE ABOVE ANY EARLY RETURNS
 
@@ -157,18 +158,30 @@ export default function App() {
 
   const handleSendChat = async (message) => {
     if (!activeSession) return;
+    const abortController = new AbortController();
+    chatAbortRef.current = abortController;
     setChatLoading(true);
     setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
     try {
-      const response = await api.chat({ message, session_id: activeSession.id });
+      const response = await api.chat({ message, session_id: activeSession.id }, abortController.signal);
       setMessages(prev => [...prev, {
         role: 'assistant', content: response.content,
         toolCalls: response.tool_calls, timestamp: new Date().toISOString(),
       }]);
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'error', content: `Error: ${err.message}`, timestamp: new Date().toISOString() }]);
+      if (err.name === 'AbortError') {
+        setMessages(prev => [...prev, { role: 'error', content: 'Request cancelled.', timestamp: new Date().toISOString() }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'error', content: `Error: ${err.message}`, timestamp: new Date().toISOString() }]);
+      }
     } finally {
+      chatAbortRef.current = null;
       setChatLoading(false);
+    }
+  };
+  const handleCancelChat = () => {
+    if (chatAbortRef.current) {
+      chatAbortRef.current.abort();
     }
   };
 
@@ -240,7 +253,7 @@ export default function App() {
             <div className="flex-1 flex overflow-hidden">
               <div className="flex-1 overflow-hidden">
                 {activeTab === 'chat' && activeSession && (
-                  <ChatPanel messages={messages} onSend={handleSendChat} loading={chatLoading} session={activeSession} />
+                  <ChatPanel messages={messages} onSend={handleSendChat} loading={chatLoading} session={activeSession} onCancel={handleCancelChat} />
                 )}
                 {activeTab === 'tools' && activeSession && (
                   <ToolPanel tools={tools} onExecute={handleExecuteTool} onBash={handleExecuteBash} loading={toolLoading} />

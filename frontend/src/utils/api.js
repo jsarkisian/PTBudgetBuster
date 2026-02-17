@@ -66,7 +66,7 @@ export const api = {
   killTask: (id) => request(`/tasks/${id}/kill`, { method: 'POST' }),
 
   // Chat
-  chat: (data) => request('/chat', { method: 'POST', body: JSON.stringify(data) }),
+  chat: (data, signal) => request('/chat', { method: 'POST', body: JSON.stringify(data), signal }),
 
   // Autonomous
   startAutonomous: (data) => request('/autonomous/start', { method: 'POST', body: JSON.stringify(data) }),
