@@ -111,4 +111,16 @@ export const api = {
     method: 'POST', body: JSON.stringify({ name, pubkey }),
   }),
   removeSSHKey: (username, keyId) => request(`/users/${username}/ssh-keys/${keyId}`, { method: 'DELETE' }),
+
+  // Tool Management
+  getToolDefinitions: () => request('/tools/definitions'),
+  addToolDefinition: (data) => request('/tools/definitions', { method: 'POST', body: JSON.stringify(data) }),
+  updateToolDefinition: (name, data) => request(`/tools/definitions/${name}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteToolDefinition: (name) => request(`/tools/definitions/${name}`, { method: 'DELETE' }),
+  checkToolInstalled: (binary) => request('/tools/check', { method: 'POST', body: JSON.stringify({ binary }) }),
+  updateTool: (tool) => request('/tools/update', { method: 'POST', body: JSON.stringify({ tool }) }),
+  installGoTool: (pkg) => request('/tools/install-go', { method: 'POST', body: JSON.stringify({ package: pkg }) }),
+  installAptTool: (pkg) => request('/tools/install-apt', { method: 'POST', body: JSON.stringify({ package: pkg }) }),
+  installGitTool: (repo, installCmd) => request('/tools/install-git', { method: 'POST', body: JSON.stringify({ repo, install_cmd: installCmd }) }),
+  installPipTool: (pkg) => request('/tools/install-pip', { method: 'POST', body: JSON.stringify({ package: pkg }) }),
 };

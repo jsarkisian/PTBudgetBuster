@@ -9,6 +9,7 @@ import ToolPanel from './components/ToolPanel';
 import FindingsPanel from './components/FindingsPanel';
 import AutoPanel from './components/AutoPanel';
 import AdminPanel from './components/AdminPanel';
+import ToolsAdmin from './components/ToolsAdmin';
 import NewSessionModal from './components/NewSessionModal';
 import EditSessionModal from './components/EditSessionModal';
 import LoginScreen from './components/LoginScreen';
@@ -231,6 +232,7 @@ export default function App() {
     { id: 'findings', label: `Findings (${findings.length})` },
     { id: 'auto', label: 'Autonomous' },
     { id: 'admin', label: currentUser.role === 'admin' ? 'Users' : 'Account' },
+    { id: 'tooladmin', label: 'Tool Mgmt' },
   ];
 
   return (
@@ -243,7 +245,7 @@ export default function App() {
           onNew={() => setShowNewSession(true)}
           onEdit={(session) => setEditingSession(session)}
         />
-        {activeSession || activeTab === 'admin' ? (
+        {activeSession || activeTab === 'admin' || activeTab === 'tooladmin' ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex border-b border-dark-600 bg-dark-900">
               {tabs.map(tab => (
@@ -281,13 +283,16 @@ export default function App() {
                 {activeTab === 'admin' && (
                   <AdminPanel currentUser={currentUser} />
                 )}
-                {!activeSession && activeTab !== 'admin' && (
+                {activeTab === 'tooladmin' && (
+                  <ToolsAdmin />
+                )}
+                {!activeSession && activeTab !== 'admin' && activeTab !== 'tooladmin' && (
                   <div className="flex-1 flex items-center justify-center text-gray-500 h-full">
                     <p className="text-sm">Select an engagement to view this tab</p>
                   </div>
                 )}
               </div>
-              {activeTab !== 'admin' && (
+              {activeTab !== 'admin' && activeTab !== 'tooladmin' && (
                 <div className="w-[45%] border-l border-dark-600">
                   <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
                 </div>

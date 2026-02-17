@@ -448,3 +448,226 @@ async def ws_task_stream(websocket: WebSocket, task_id: str):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=9500)
+
+
+# ──────────────────────────────────────────────
+#  Tool Management
+# ──────────────────────────────────────────────
+
+@app.get("/tools/definitions")
+async def get_tool_definitions():
+    """Return raw tool definitions for editing."""
+    return {"tools": TOOL_DEFS}
+
+@app.put("/tools/definitions/{tool_name}")
+async def update_tool_definition(tool_name: str, body: dict):
+    """Update a single tool definition."""
+    global TOOL_DEFS
+    TOOL_DEFS[tool_name] = body
+    _save_tool_definitions()
+    return {"status": "updated", "tool": tool_name}
+
+@app.post("/tools/definitions")
+async def add_tool_definition(body: dict):
+    """Add a new tool definition."""
+    global TOOL_DEFS
+    name = body.get("name")
+    if not name:
+        raise HTTPException(400, "Tool name is required")
+    if name in TOOL_DEFS:
+        raise HTTPException(400, f"Tool '{name}' already exists")
+    TOOL_DEFS[name] = body
+    _save_tool_definitions()
+    return {"status": "added", "tool": name}
+
+@app.delete("/tools/definitions/{tool_name}")
+async def delete_tool_definition(tool_name: str):
+    """Remove a tool definition."""
+    global TOOL_DEFS
+    if tool_name not in TOOL_DEFS:
+        raise HTTPException(404, "Tool not found")
+    del TOOL_DEFS[tool_name]
+    _save_tool_definitions()
+    return {"status": "deleted", "tool": tool_name}
+
+@app.post("/tools/check")
+async def check_tool_installed(body: dict):
+    """Check if a binary exists on the system."""
+    import shutil
+    binary = body.get("binary", "")
+    found = shutil.which(binary) is not None
+    return {"binary": binary, "installed": found}
+
+@app.post("/tools/update")
+async def update_tools(body: dict):
+    """Update Go-based tools to latest version."""
+    tool_name = body.get("tool")
+    if not tool_name or tool_name not in TOOL_DEFS:
+        raise HTTPException(400, "Invalid tool name")
+    
+    tool_def = TOOL_DEFS[tool_name]
+    binary = tool_def.get("binary", "")
+    
+    # Only Go tools can be auto-updated
+    if not binary.startswith("/root/go/bin/"):
+        return {"status": "skipped", "message": "Only Go-based tools can be auto-updated"}
+    
+    # Find the go install path from the binary name
+    go_packages = {
+        "subfinder": "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+        "httpx": "github.com/projectdiscovery/httpx/cmd/httpx@latest",
+        "nuclei": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+        "naabu": "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
+        "katana": "github.com/projectdiscovery/katana/cmd/katana@latest",
+        "dnsx": "github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
+        "tlsx": "github.com/projectdiscovery/tlsx/cmd/tlsx@latest",
+        "gowitness": "github.com/sensepost/gowitness@latest",
+        "assetfinder": "github.com/tomnomnom/assetfinder@latest",
+        "waybackurls": "github.com/tomnomnom/waybackurls@latest",
+        "httprobe": "github.com/tomnomnom/httprobe@latest",
+        "ffuf": "github.com/ffuf/ffuf/v2@latest",
+        "gau": "github.com/lc/gau/v2/cmd/gau@latest",
+        "hakrawler": "github.com/hakluke/hakrawler@latest",
+        "gospider": "github.com/jaeles-project/gospider@latest",
+        "gf": "github.com/tomnomnom/gf@latest",
+        "anew": "github.com/tomnomnom/anew@latest",
+        "qsreplace": "github.com/tomnomnom/qsreplace@latest",
+        "uncover": "github.com/projectdiscovery/uncover/cmd/uncover@latest",
+        "notify": "github.com/projectdiscovery/notify/cmd/notify@latest",
+    }
+    
+    pkg = go_packages.get(tool_name)
+    if not pkg:
+        return {"status": "skipped", "message": f"No known Go package for {tool_name}"}
+    
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["go", "install", pkg],
+            capture_output=True, text=True, timeout=120,
+            env={**dict(__import__('os').environ), "GOPATH": "/root/go"}
+        )
+        if result.returncode == 0:
+            return {"status": "updated", "tool": tool_name, "output": result.stdout}
+        else:
+            return {"status": "failed", "tool": tool_name, "error": result.stderr}
+    except subprocess.TimeoutExpired:
+        return {"status": "failed", "tool": tool_name, "error": "Update timed out"}
+
+@app.post("/tools/install-go")
+async def install_go_tool(body: dict):
+    """Install a new Go tool by package path."""
+    package = body.get("package", "")
+    if not package or "github.com" not in package:
+        raise HTTPException(400, "Invalid Go package path")
+    
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["go", "install", package],
+            capture_output=True, text=True, timeout=180,
+            env={**dict(__import__('os').environ), "GOPATH": "/root/go"}
+        )
+        if result.returncode == 0:
+            # Extract binary name from package
+            binary_name = package.split("/")[-1].split("@")[0]
+            return {"status": "installed", "binary": f"/root/go/bin/{binary_name}", "output": result.stdout}
+        else:
+            return {"status": "failed", "error": result.stderr}
+    except subprocess.TimeoutExpired:
+        return {"status": "failed", "error": "Install timed out (180s)"}
+
+
+def _save_tool_definitions():
+    """Save tool definitions back to YAML."""
+    config_path = Path("/opt/pentest/configs/tool_definitions.yaml")
+    try:
+        import yaml
+        with open(config_path, "w") as f:
+            yaml.dump({"tools": TOOL_DEFS}, f, default_flow_style=False, sort_keys=False)
+    except Exception as e:
+        print(f"[WARN] Failed to save tool definitions: {e}")
+
+
+@app.post("/tools/install-apt")
+async def install_apt_tool(body: dict):
+    """Install a tool via apt-get."""
+    package = body.get("package", "")
+    if not package:
+        raise HTTPException(400, "Package name required")
+    
+    import subprocess
+    try:
+        # Update first, then install
+        result = subprocess.run(
+            ["bash", "-c", f"apt-get update -qq && apt-get install -y --no-install-recommends {package}"],
+            capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode == 0:
+            # Find the binary
+            which_result = subprocess.run(["which", package], capture_output=True, text=True)
+            binary = which_result.stdout.strip() if which_result.returncode == 0 else f"/usr/bin/{package}"
+            return {"status": "installed", "binary": binary, "output": result.stdout[-500:]}
+        else:
+            return {"status": "failed", "error": result.stderr[-500:]}
+    except subprocess.TimeoutExpired:
+        return {"status": "failed", "error": "Install timed out (300s)"}
+
+
+@app.post("/tools/install-git")
+async def install_git_tool(body: dict):
+    """Clone and install a tool from a git repo."""
+    repo_url = body.get("repo", "")
+    install_cmd = body.get("install_cmd", "")
+    if not repo_url:
+        raise HTTPException(400, "Repository URL required")
+    
+    import subprocess
+    repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+    clone_dir = f"/opt/pentest/tools/{repo_name}"
+    
+    try:
+        # Clone
+        clone_result = subprocess.run(
+            ["git", "clone", "--depth", "1", repo_url, clone_dir],
+            capture_output=True, text=True, timeout=120,
+        )
+        if clone_result.returncode != 0:
+            return {"status": "failed", "error": f"Clone failed: {clone_result.stderr[-500:]}"}
+        
+        # Run install command if provided
+        if install_cmd:
+            install_result = subprocess.run(
+                ["bash", "-c", install_cmd],
+                capture_output=True, text=True, timeout=300,
+                cwd=clone_dir,
+            )
+            if install_result.returncode != 0:
+                return {"status": "partial", "message": f"Cloned but install failed: {install_result.stderr[-500:]}", "path": clone_dir}
+        
+        return {"status": "installed", "path": clone_dir, "output": f"Cloned to {clone_dir}"}
+    except subprocess.TimeoutExpired:
+        return {"status": "failed", "error": "Install timed out"}
+
+
+@app.post("/tools/install-pip")
+async def install_pip_tool(body: dict):
+    """Install a Python tool via pip."""
+    package = body.get("package", "")
+    if not package:
+        raise HTTPException(400, "Package name required")
+    
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["pip3", "install", package, "--break-system-packages"],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode == 0:
+            which_result = subprocess.run(["which", package.split("==")[0].split("[")[0]], capture_output=True, text=True)
+            binary = which_result.stdout.strip() if which_result.returncode == 0 else ""
+            return {"status": "installed", "binary": binary, "output": result.stdout[-500:]}
+        else:
+            return {"status": "failed", "error": result.stderr[-500:]}
+    except subprocess.TimeoutExpired:
+        return {"status": "failed", "error": "Install timed out (120s)"}
