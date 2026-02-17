@@ -446,9 +446,6 @@ async def ws_task_stream(websocket: WebSocket, task_id: str):
         pass
 
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=9500)
-
 
 # ──────────────────────────────────────────────
 #  Tool Management
@@ -671,3 +668,6 @@ async def install_pip_tool(body: dict):
             return {"status": "failed", "error": result.stderr[-500:]}
     except subprocess.TimeoutExpired:
         return {"status": "failed", "error": "Install timed out (120s)"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=9500)

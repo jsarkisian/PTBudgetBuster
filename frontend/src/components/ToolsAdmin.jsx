@@ -149,15 +149,13 @@ function ToolDetail({ name, def, onUpdate, onDelete, onSave, updating }) {
   const [binary, setBinary] = useState(def.binary || '');
   const [category, setCategory] = useState(def.category || 'other');
   const [riskLevel, setRiskLevel] = useState(def.risk_level || 'low');
-  const [installed, setInstalled] = useState(null);
 
   useEffect(() => {
     setDesc(def.description || '');
     setBinary(def.binary || '');
     setCategory(def.category || 'other');
     setRiskLevel(def.risk_level || 'low');
-    setInstalled(null);
-    api.checkToolInstalled(def.binary || name).then(r => setInstalled(r.installed)).catch(() => {});
+
   }, [name, def]);
 
   const handleSave = () => {
@@ -202,13 +200,7 @@ function ToolDetail({ name, def, onUpdate, onDelete, onSave, updating }) {
             <div className="text-sm text-gray-200 font-mono">{def.binary || name}</div>
           )}
         </div>
-        <div className="bg-dark-800 border border-dark-600 rounded p-3">
-          <div className="text-[10px] text-gray-500 uppercase mb-1">Status</div>
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${installed === true ? 'bg-accent-green' : installed === false ? 'bg-accent-red' : 'bg-gray-500 animate-pulse'}`} />
-            <span className="text-sm text-gray-200">{installed === true ? 'Installed' : installed === false ? 'Not Found' : 'Checking...'}</span>
-          </div>
-        </div>
+
         <div className="bg-dark-800 border border-dark-600 rounded p-3">
           <div className="text-[10px] text-gray-500 uppercase mb-1">Category</div>
           {editing ? (
