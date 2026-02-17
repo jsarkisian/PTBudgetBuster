@@ -176,6 +176,13 @@ class PentestAgent:
                     "timestamp": datetime.utcnow().isoformat(),
                 })
                 
+                self.session.add_event("tool_exec", {
+                    "task_id": task_id,
+                    "tool": tool_input["tool"],
+                    "parameters": tool_input["parameters"],
+                    "source": "ai_agent",
+                })
+
                 resp = await client.post("/execute/sync", json={
                     "tool": tool_input["tool"],
                     "parameters": tool_input["parameters"],
@@ -223,6 +230,13 @@ class PentestAgent:
                     "timestamp": datetime.utcnow().isoformat(),
                 })
                 
+                self.session.add_event("bash_exec", {
+                    "task_id": task_id,
+                    "tool": "bash",
+                    "command": tool_input["command"],
+                    "source": "ai_agent",
+                })
+
                 resp = await client.post("/execute/sync", json={
                     "tool": "bash",
                     "parameters": {"command": tool_input["command"]},

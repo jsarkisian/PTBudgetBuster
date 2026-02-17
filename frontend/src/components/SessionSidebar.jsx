@@ -31,7 +31,7 @@ function DeleteConfirmModal({ sessionName, onConfirm, onCancel }) {
   );
 }
 
-export default function SessionSidebar({ sessions, activeSession, onSelect, onDelete, onNew }) {
+export default function SessionSidebar({ sessions, activeSession, onSelect, onDelete, onNew, onEdit }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   const handleConfirmDelete = () => {
@@ -71,6 +71,13 @@ export default function SessionSidebar({ sessions, activeSession, onSelect, onDe
                     title="Export engagement"
                   >
                     ⬇
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(session); }}
+                    className="text-gray-400 hover:text-accent-cyan text-base p-0.5 transition-colors"
+                    title="Edit engagement"
+                  >
+                    ✎
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setDeleteTarget(session); }}

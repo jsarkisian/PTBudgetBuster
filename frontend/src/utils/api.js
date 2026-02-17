@@ -55,6 +55,7 @@ export const api = {
   listSessions: () => request('/sessions'),
   getSession: (id) => request(`/sessions/${id}`),
   deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),
+  updateSession: (id, data) => request(`/sessions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Tools
   listTools: () => request('/tools'),

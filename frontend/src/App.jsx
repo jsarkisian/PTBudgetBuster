@@ -10,6 +10,7 @@ import FindingsPanel from './components/FindingsPanel';
 import AutoPanel from './components/AutoPanel';
 import AdminPanel from './components/AdminPanel';
 import NewSessionModal from './components/NewSessionModal';
+import EditSessionModal from './components/EditSessionModal';
 import LoginScreen from './components/LoginScreen';
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
   const [tools, setTools] = useState({});
   const [pendingApproval, setPendingApproval] = useState(null);
   const [showNewSession, setShowNewSession] = useState(false);
+  const [editingSession, setEditingSession] = useState(null);
   const [health, setHealth] = useState(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
@@ -156,6 +158,13 @@ export default function App() {
     }
   };
 
+  const handleEditSession = async (data) => {
+    const updated = await api.updateSession(editingSession.id, data);
+    setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+    if (activeSession?.id === updated.id) setActiveSession(updated);
+    setEditingSession(null);
+  };
+
   const handleSendChat = async (message) => {
     if (!activeSession) return;
     const abortController = new AbortController();
@@ -232,6 +241,7 @@ export default function App() {
           sessions={sessions} activeSession={activeSession}
           onSelect={handleSelectSession} onDelete={handleDeleteSession}
           onNew={() => setShowNewSession(true)}
+          onEdit={(session) => setEditingSession(session)}
         />
         {activeSession || activeTab === 'admin' ? (
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -302,6 +312,9 @@ export default function App() {
       </div>
       {showNewSession && (
         <NewSessionModal onClose={() => setShowNewSession(false)} onCreate={handleCreateSession} />
+      )}
+      {editingSession && (
+        <EditSessionModal session={editingSession} onClose={() => setEditingSession(null)} onSave={handleEditSession} />
       )}
     </div>
   );

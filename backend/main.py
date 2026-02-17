@@ -174,6 +174,25 @@ async def get_session(session_id: str):
         raise HTTPException(404, "Session not found")
     return session.to_dict()
 
+class UpdateSessionRequest(BaseModel):
+    name: str = None
+    target_scope: list[str] = None
+    notes: str = None
+
+@app.put("/api/sessions/{session_id}")
+async def update_session(session_id: str, req: UpdateSessionRequest):
+    session = session_mgr.get(session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if req.name is not None:
+        session.name = req.name
+    if req.target_scope is not None:
+        session.target_scope = req.target_scope
+    if req.notes is not None:
+        session.notes = req.notes
+    session._save()
+    return session.to_dict()
+
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Delete a session and all associated data."""
