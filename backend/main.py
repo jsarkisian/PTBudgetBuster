@@ -9,7 +9,7 @@ import json
 import os
 import uuid
 import re
-import re
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -838,6 +838,48 @@ async def remove_ssh_key(username: str, key_id: str, user=Depends(get_current_us
     if not user_mgr.remove_ssh_key(username, key_id):
         raise HTTPException(404, "SSH key not found")
     return {"status": "deleted"}
+
+
+# ──────────────────────────────────────────────
+#  Settings (logo, branding)
+# ──────────────────────────────────────────────
+
+_SETTINGS_FILE = Path(os.environ.get("SESSION_DATA_DIR", "/opt/pentest/data/sessions")) / "settings.json"
+
+def _load_settings() -> dict:
+    if _SETTINGS_FILE.exists():
+        try:
+            return json.loads(_SETTINGS_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+def _save_settings(data: dict):
+    _SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _SETTINGS_FILE.write_text(json.dumps(data, indent=2))
+
+@app.get("/api/settings/logo")
+async def get_logo():
+    return {"logo": _load_settings().get("logo")}
+
+class SetLogoRequest(BaseModel):
+    logo: str  # data URL like "data:image/png;base64,..."
+
+@app.post("/api/settings/logo")
+async def set_logo(req: SetLogoRequest, admin=Depends(require_admin)):
+    if not req.logo.startswith("data:image/"):
+        raise HTTPException(400, "Must be a valid image data URL")
+    data = _load_settings()
+    data["logo"] = req.logo
+    _save_settings(data)
+    return {"status": "ok"}
+
+@app.delete("/api/settings/logo")
+async def delete_logo(admin=Depends(require_admin)):
+    data = _load_settings()
+    data.pop("logo", None)
+    _save_settings(data)
+    return {"status": "ok"}
 
 
 # ──────────────────────────────────────────────

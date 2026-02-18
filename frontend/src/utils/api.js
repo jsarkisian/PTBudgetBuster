@@ -112,6 +112,11 @@ export const api = {
   }),
   removeSSHKey: (username, keyId) => request(`/users/${username}/ssh-keys/${keyId}`, { method: 'DELETE' }),
 
+  // Settings / Branding
+  getLogo: () => request('/settings/logo'),
+  setLogo: (logo) => request('/settings/logo', { method: 'POST', body: JSON.stringify({ logo }) }),
+  deleteLogo: () => request('/settings/logo', { method: 'DELETE' }),
+
   // Tool Management
   getToolDefinitions: () => request('/tools/definitions'),
   addToolDefinition: (data) => request('/tools/definitions', { method: 'POST', body: JSON.stringify(data) }),

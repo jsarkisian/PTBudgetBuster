@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 
-export default function AdminPanel({ currentUser }) {
+export default function AdminPanel({ currentUser, logoUrl, onLogoChange }) {
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showCreateUser, setShowCreateUser] = useState(false);
@@ -127,6 +127,8 @@ export default function AdminPanel({ currentUser }) {
           onError={setError}
         />
       )}
+
+      <BrandingSection logoUrl={logoUrl} onLogoChange={onLogoChange} onFlash={flash} onError={setError} />
     </div>
   );
 }
@@ -510,6 +512,89 @@ function ChangePasswordForm() {
         {error && <div className="text-xs text-red-400">{error}</div>}
         {success && <div className="text-xs text-green-400">{success}</div>}
         <button onClick={handleSubmit} className="btn-primary text-xs px-4 py-1.5">Change Password</button>
+      </div>
+    </div>
+  );
+}
+
+function BrandingSection({ logoUrl, onLogoChange, onFlash, onError }) {
+  const fileInputRef = useRef(null);
+  const [preview, setPreview] = useState(logoUrl);
+
+  useEffect(() => { setPreview(logoUrl); }, [logoUrl]);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      onError('Please select an image file');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      onError('Image must be under 1MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target.result;
+      setPreview(dataUrl);
+      try {
+        await api.setLogo(dataUrl);
+        onLogoChange(dataUrl);
+        onFlash('Logo updated');
+      } catch (err) {
+        onError(err.message);
+        setPreview(logoUrl);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleReset = async () => {
+    try {
+      await api.deleteLogo();
+      setPreview(null);
+      onLogoChange(null);
+      onFlash('Logo reset to default');
+    } catch (err) {
+      onError(err.message);
+    }
+  };
+
+  return (
+    <div className="border-t border-dark-600 px-4 py-4">
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Branding</h3>
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 flex items-center justify-center bg-dark-800 border border-dark-600 rounded-lg shrink-0">
+          {preview
+            ? <img src={preview} alt="Logo" className="w-10 h-10 object-contain rounded" />
+            : <span className="text-2xl">🛡️</span>
+          }
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="btn-primary text-xs px-3 py-1.5"
+          >
+            Upload Logo
+          </button>
+          {preview && (
+            <button
+              onClick={handleReset}
+              className="btn-ghost text-xs px-3 py-1.5"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <p className="text-xs text-gray-600">PNG, JPG, SVG · max 1MB</p>
       </div>
     </div>
   );
