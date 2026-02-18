@@ -15,7 +15,7 @@ from typing import Optional
 
 import anthropic
 import httpx
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -250,13 +250,13 @@ async def get_tool_definitions():
         return resp.json()
 
 @app.put("/api/tools/definitions/{tool_name}")
-async def update_tool_def(tool_name: str, body: dict):
+async def update_tool_def(tool_name: str, body: dict = Body(...)):
     async with get_toolbox_client() as client:
         resp = await client.put(f"/tools/definitions/{tool_name}", json=body)
         return resp.json()
 
 @app.post("/api/tools/definitions")
-async def add_tool_def(body: dict):
+async def add_tool_def(body: dict = Body(...)):
     async with get_toolbox_client() as client:
         resp = await client.post("/tools/definitions", json=body)
         if resp.status_code != 200:
@@ -270,37 +270,37 @@ async def delete_tool_def(tool_name: str):
         return resp.json()
 
 @app.post("/api/tools/check")
-async def check_tool(body: dict):
+async def check_tool(body: dict = Body(...)):
     async with get_toolbox_client() as client:
         resp = await client.post("/tools/check", json=body)
         return resp.json()
 
 @app.post("/api/tools/update")
-async def update_tool(body: dict):
+async def update_tool(body: dict = Body(...)):
     async with get_toolbox_client() as client:
         resp = await client.post("/tools/update", json=body, timeout=130.0)
         return resp.json()
 
 @app.post("/api/tools/install-go")
-async def install_go_tool(body: dict):
+async def install_go_tool(body: dict = Body(...)):
     async with get_toolbox_client() as client:
         resp = await client.post("/tools/install-go", json=body, timeout=190.0)
         return resp.json()
 
 @app.post("/api/tools/install-apt")
-async def install_apt_tool(body: dict):
+async def install_apt_tool(body: dict = Body(...)):
     async with get_toolbox_client() as client:
         resp = await client.post("/tools/install-apt", json=body, timeout=310.0)
         return resp.json()
 
 @app.post("/api/tools/install-git")
-async def install_git_tool(body: dict):
+async def install_git_tool(body: dict = Body(...)):
     async with get_toolbox_client() as client:
         resp = await client.post("/tools/install-git", json=body, timeout=310.0)
         return resp.json()
 
 @app.post("/api/tools/install-pip")
-async def install_pip_tool(body: dict):
+async def install_pip_tool(body: dict = Body(...)):
     async with get_toolbox_client() as client:
         resp = await client.post("/tools/install-pip", json=body, timeout=130.0)
         return resp.json()

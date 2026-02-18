@@ -370,7 +370,7 @@ function InstallToolModal({ onClose, onInstalled, onError }) {
         result = await api.installGitTool(gitRepo.trim(), gitCmd.trim());
       }
       if (result.status === 'installed') {
-        onInstalled(`Installed successfully${result.binary ? ` → ${result.binary}` : result.path ? ` → ${result.path}` : ''}`);
+        onInstalled("Installed successfully" + (result.binary ? " → " + result.binary : result.path ? " → " + result.path : ""));
       } else if (result.status === 'partial') {
         setOutput(result.message);
       } else {
