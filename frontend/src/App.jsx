@@ -13,6 +13,7 @@ import ToolsAdmin from './components/ToolsAdmin';
 import NewSessionModal from './components/NewSessionModal';
 import EditSessionModal from './components/EditSessionModal';
 import LoginScreen from './components/LoginScreen';
+import HomePage from './components/HomePage';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -28,6 +29,7 @@ export default function App() {
   const [showNewSession, setShowNewSession] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [health, setHealth] = useState(null);
+  const [logoUrl, setLogoUrl] = useState(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
   const chatAbortRef = React.useRef(null);
@@ -92,6 +94,7 @@ export default function App() {
     api.health().then(setHealth).catch(() => {});
     api.listSessions().then(setSessions).catch(() => {});
     api.listTools().then(data => setTools(data.tools || {})).catch(() => {});
+    api.getLogo().then(data => setLogoUrl(data.logo || null)).catch(() => {});
   }, [currentUser]);
 
   // Load session details when active session changes
@@ -237,7 +240,7 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-dark-950">
-      <Header health={health} connected={connected} session={activeSession} currentUser={currentUser} onLogout={handleLogout} />
+      <Header health={health} connected={connected} session={activeSession} currentUser={currentUser} onLogout={handleLogout} logoUrl={logoUrl} onLogoClick={() => setActiveSession(null)} />
       <div className="flex-1 flex overflow-hidden">
         <SessionSidebar
           sessions={sessions} activeSession={activeSession}
@@ -281,7 +284,7 @@ export default function App() {
                   />
                 )}
                 {activeTab === 'admin' && (
-                  <AdminPanel currentUser={currentUser} />
+                  <AdminPanel currentUser={currentUser} logoUrl={logoUrl} onLogoChange={setLogoUrl} />
                 )}
                 {activeTab === 'tooladmin' && (
                   <ToolsAdmin />
@@ -300,19 +303,14 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            <div className="text-center">
-              <div className="text-6xl mb-4">🛡️</div>
-              <h2 className="text-xl font-semibold text-gray-300 mb-2">PentestMCP</h2>
-              <p className="mb-4">Create or select an engagement to begin testing</p>
-              <div className="flex gap-3 justify-center">
-                <button onClick={() => setShowNewSession(true)} className="btn-primary">New Engagement</button>
-                <button onClick={() => setActiveTab('admin')} className="px-4 py-2 text-sm bg-dark-700 hover:bg-dark-600 text-gray-300 rounded border border-dark-500 transition-colors">
-                  {currentUser.role === 'admin' ? '👥 Manage Users' : '👤 My Account'}
-                </button>
-              </div>
-            </div>
-          </div>
+          <HomePage
+            sessions={sessions}
+            currentUser={currentUser}
+            logoUrl={logoUrl}
+            onNewSession={() => setShowNewSession(true)}
+            onSelectSession={handleSelectSession}
+            onGoToAdmin={() => { setActiveSession(null); setActiveTab('admin'); }}
+          />
         )}
       </div>
       {showNewSession && (

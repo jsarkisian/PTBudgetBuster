@@ -1,11 +1,20 @@
 import React from 'react';
 
-export default function Header({ health, connected, session, currentUser, onLogout }) {
+export default function Header({ health, connected, session, currentUser, onLogout, logoUrl, onLogoClick }) {
   return (
     <header className="h-12 bg-dark-900 border-b border-dark-600 flex items-center px-4 justify-between shrink-0">
       <div className="flex items-center gap-3">
-        <span className="text-lg">🛡️</span>
-        <h1 className="text-sm font-bold text-gray-100 tracking-wide">PentestMCP</h1>
+        <button
+          onClick={onLogoClick}
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity focus:outline-none"
+          title="Go to home"
+        >
+          {logoUrl
+            ? <img src={logoUrl} alt="Logo" className="h-7 w-7 object-contain rounded" />
+            : <span className="text-lg">🛡️</span>
+          }
+          <h1 className="text-sm font-bold text-gray-100 tracking-wide">PentestMCP</h1>
+        </button>
         {session && (
           <>
             <span className="text-dark-400">/</span>
