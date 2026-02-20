@@ -152,7 +152,7 @@ export default function SchedulerPanel({ session, tools }) {
           {scheduleType === 'once' ? (
             <div>
               <label className="block text-xs text-gray-400 mb-1">Run At *</label>
-              <input type="datetime-local" value={runAt} onChange={e => setRunAt(e.target.value)} className="input text-xs" />
+              <input type="datetime-local" value={runAt} onChange={e => setRunAt(e.target.value)} className="input" />
             </div>
           ) : (
             <div>
