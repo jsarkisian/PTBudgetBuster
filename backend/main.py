@@ -1271,6 +1271,10 @@ async def run_schedule_now(job_id: str):
     job = schedule_mgr.get(job_id)
     if not job:
         raise HTTPException(404, "Schedule not found")
+    # _execute_scheduled_job skips disabled/completed jobs — reset status so it fires
+    if job.status in ("completed", "failed", "disabled"):
+        job.status = "scheduled"
+        schedule_mgr._save()
     asyncio.create_task(_execute_scheduled_job(job_id))
     return job.to_dict()
 
