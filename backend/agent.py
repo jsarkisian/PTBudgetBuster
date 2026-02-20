@@ -548,7 +548,7 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
             session.auto_pending_approval = {
                 "step_id": step_id,
                 "step_number": step,
-                "description": response["content"][:500],
+                "description": response["content"],
                 "tool_calls": response.get("tool_calls", []),
                 "approved": None,
                 "resolved": False,
@@ -584,12 +584,19 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
             if not session.auto_pending_approval.get("approved"):
                 await self.broadcast({
                     "type": "auto_status",
-                    "message": f"Step {step} rejected by tester - stopping autonomous mode",
+                    "message": f"Step {step} rejected — stopping autonomous mode",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 session.auto_mode = False
                 return
-            
+
+            await self.broadcast({
+                "type": "auto_step_complete",
+                "step_id": step_id,
+                "step_number": step,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
             # Prepare next step prompt
             current_prompt = f"""Continue with step {step + 1} of the autonomous testing plan. 
 Review what you've found so far and execute the next logical action.

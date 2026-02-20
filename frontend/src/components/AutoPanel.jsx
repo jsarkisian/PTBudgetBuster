@@ -1,32 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
-export default function AutoPanel({ session, pendingApproval, onStart, onStop, onApprove }) {
+export default function AutoPanel({ session, pendingApproval, autoHistory = [], onStart, onStop, onApprove }) {
   const [objective, setObjective] = useState('');
   const [maxSteps, setMaxSteps] = useState(10);
+  const historyRef = useRef(null);
   const isRunning = session?.auto_mode;
+  const step = session?.auto_current_step || 0;
+  const maxS = session?.auto_max_steps || 10;
+
+  // Auto-scroll history to bottom on new entries
+  useEffect(() => {
+    if (historyRef.current) {
+      historyRef.current.scrollTop = historyRef.current.scrollHeight;
+    }
+  }, [autoHistory.length]);
 
   const handleStart = () => {
     if (!objective.trim()) return;
     onStart(objective.trim(), maxSteps);
+    setObjective('');
   };
 
   return (
     <div className="h-full flex flex-col">
-      {/* Config section */}
-      <div className="p-4 border-b border-dark-600">
-        <div className="flex items-center gap-3 mb-4">
+      {/* Header / Controls */}
+      <div className="p-4 border-b border-dark-600 shrink-0">
+        <div className="flex items-center gap-3 mb-3">
           <span className="text-lg">🤖</span>
-          <div>
+          <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-gray-200">Autonomous Testing Mode</h3>
-            <p className="text-xs text-gray-500">
-              The AI will plan and execute tests step-by-step, requiring your approval at each stage.
-            </p>
+            {isRunning && session?.auto_objective && (
+              <p className="text-xs text-gray-500 truncate mt-0.5" title={session.auto_objective}>
+                {session.auto_objective}
+              </p>
+            )}
           </div>
           {isRunning && (
-            <span className="ml-auto flex items-center gap-1.5 text-xs text-accent-green">
-              <span className="w-2 h-2 rounded-full bg-accent-green animate-pulse" />
-              Running
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-gray-400 font-mono">{step}/{maxS}</span>
+              <span className="flex items-center gap-1 text-xs text-accent-green">
+                <span className="w-2 h-2 rounded-full bg-accent-green animate-pulse" />
+                Running
+              </span>
+            </div>
           )}
         </div>
 
@@ -47,10 +63,7 @@ export default function AutoPanel({ session, pendingApproval, onStart, onStop, o
                 Max Steps: {maxSteps}
               </label>
               <input
-                type="range"
-                min={3}
-                max={50}
-                value={maxSteps}
+                type="range" min={3} max={50} value={maxSteps}
                 onChange={(e) => setMaxSteps(parseInt(e.target.value))}
                 className="w-full"
               />
@@ -59,11 +72,7 @@ export default function AutoPanel({ session, pendingApproval, onStart, onStop, o
                 <span>Thorough (50)</span>
               </div>
             </div>
-            <button
-              onClick={handleStart}
-              disabled={!objective.trim()}
-              className="btn-success w-full"
-            >
+            <button onClick={handleStart} disabled={!objective.trim()} className="btn-success w-full">
               Start Autonomous Testing
             </button>
           </div>
@@ -74,74 +83,195 @@ export default function AutoPanel({ session, pendingApproval, onStart, onStop, o
         )}
       </div>
 
-      {/* Approval section */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {pendingApproval ? (
-          <div className="panel border-accent-yellow/40">
-            <div className="panel-header bg-yellow-500/10">
-              <div className="flex items-center gap-2">
-                <span className="text-accent-yellow">⚠️</span>
-                <span className="text-sm font-semibold text-accent-yellow">
-                  Step {pendingApproval.stepNumber} — Approval Required
-                </span>
-              </div>
-            </div>
-            <div className="p-4">
-              <div className="text-sm text-gray-300 whitespace-pre-wrap mb-4">
-                {pendingApproval.description}
-              </div>
-
-              {pendingApproval.toolCalls?.length > 0 && (
-                <div className="mb-4">
-                  <div className="text-xs text-gray-400 font-medium mb-2">Planned tool calls:</div>
-                  <div className="space-y-1">
-                    {pendingApproval.toolCalls.map((tc, i) => (
-                      <div key={i} className="text-xs bg-dark-700 rounded px-2 py-1 font-mono">
-                        <span className="text-accent-cyan">{tc.tool}</span>
-                        {tc.input?.tool && <span className="text-gray-400"> → {tc.input.tool}</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => onApprove(pendingApproval.stepId, true)}
-                  className="btn-success flex-1"
-                >
-                  ✓ Approve & Continue
-                </button>
-                <button
-                  onClick={() => onApprove(pendingApproval.stepId, false)}
-                  className="btn-danger flex-1"
-                >
-                  ✗ Reject & Stop
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : isRunning ? (
-          <div className="text-center py-8">
-            <div className="flex justify-center gap-1 mb-3">
-              <span className="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-            <p className="text-sm text-gray-400">AI is working on the next step...</p>
-            <p className="text-xs text-gray-500 mt-1">You'll be asked to approve before any action is taken.</p>
-          </div>
-        ) : (
+      {/* History feed */}
+      <div ref={historyRef} className="flex-1 overflow-y-auto p-3 space-y-2">
+        {autoHistory.length === 0 && !isRunning ? (
           <div className="text-center py-12 text-gray-500">
             <div className="text-3xl mb-2">🎯</div>
             <p className="text-sm">Configure an objective and start autonomous testing.</p>
             <p className="text-xs mt-2 text-gray-600">
-              The AI will propose each step and wait for your explicit approval before executing any tools.
-              You maintain full control at all times.
+              The AI will plan and execute each step, waiting for your approval before continuing.
+              You can see its full reasoning and tool calls here.
             </p>
+          </div>
+        ) : (
+          autoHistory.map((entry, i) =>
+            entry.type === 'status' ? (
+              <StatusEntry key={i} entry={entry} />
+            ) : (
+              <StepEntry
+                key={entry.stepId || i}
+                entry={entry}
+                isPending={pendingApproval?.stepId === entry.stepId}
+                onApprove={onApprove}
+              />
+            )
+          )
+        )}
+
+        {/* AI working indicator */}
+        {isRunning && !pendingApproval && (
+          <div className="flex items-center gap-2 py-2 px-1">
+            <div className="flex gap-1">
+              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+            <span className="text-xs text-gray-500">AI is planning and executing the next step…</span>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function StatusEntry({ entry }) {
+  return (
+    <div className="flex items-center gap-2 px-1 py-0.5 text-xs text-gray-500">
+      <span className="text-gray-700">─</span>
+      <span className="flex-1">{entry.message}</span>
+      <span className="text-gray-700 shrink-0">
+        {entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : ''}
+      </span>
+    </div>
+  );
+}
+
+function StepEntry({ entry, isPending, onApprove }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const statusIcon = entry.status === 'approved'
+    ? <span className="text-accent-green font-bold">✓</span>
+    : entry.status === 'rejected'
+    ? <span className="text-accent-red font-bold">✗</span>
+    : <span className="text-accent-yellow font-bold">⏳</span>;
+
+  const borderColor = entry.status === 'approved'
+    ? 'border-accent-green/20'
+    : entry.status === 'rejected'
+    ? 'border-accent-red/20'
+    : 'border-accent-yellow/40';
+
+  const headerBg = entry.status === 'approved'
+    ? 'bg-green-500/5'
+    : entry.status === 'rejected'
+    ? 'bg-red-500/5'
+    : 'bg-yellow-500/8';
+
+  // Extract tool names for collapsed summary
+  const toolNames = (entry.toolCalls || [])
+    .map(tc => tc.input?.tool || (tc.tool === 'execute_bash' ? 'bash' : tc.tool))
+    .filter(Boolean)
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .slice(0, 4);
+
+  return (
+    <div className={`border rounded ${borderColor} overflow-hidden`}>
+      {/* Step header — click to expand/collapse */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className={`w-full flex items-center gap-2 px-3 py-2 text-left ${headerBg} hover:brightness-110 transition-all`}
+      >
+        <span className="text-xs shrink-0">{statusIcon}</span>
+        <span className="text-xs font-semibold text-gray-200 shrink-0">Step {entry.stepNumber}</span>
+        {entry.status === 'pending' && (
+          <span className="text-xs text-accent-yellow">— Approval Required</span>
+        )}
+        {toolNames.length > 0 && (
+          <span className="ml-auto text-xs text-gray-600 font-mono truncate max-w-[120px]">
+            {toolNames.join(', ')}
+          </span>
+        )}
+        <span className="text-gray-600 text-xs shrink-0">{expanded ? '▲' : '▼'}</span>
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3 pt-2 space-y-3 bg-dark-800/40">
+          {/* AI reasoning / description */}
+          <div className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+            {entry.description || <span className="text-gray-600 italic">No description provided</span>}
+          </div>
+
+          {/* Tool calls */}
+          {entry.toolCalls?.length > 0 && (
+            <div>
+              <div className="text-xs text-gray-500 font-medium mb-1 uppercase tracking-wide">
+                Tools executed ({entry.toolCalls.length})
+              </div>
+              <div className="space-y-1">
+                {entry.toolCalls.map((tc, i) => (
+                  <ToolCallLine key={i} tc={tc} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Approval buttons */}
+          {isPending && (
+            <div className="flex gap-2 pt-1 border-t border-dark-600">
+              <button
+                onClick={() => onApprove(entry.stepId, true)}
+                className="btn-success flex-1 text-xs py-1.5"
+              >
+                ✓ Approve & Continue
+              </button>
+              <button
+                onClick={() => onApprove(entry.stepId, false)}
+                className="btn-danger flex-1 text-xs py-1.5"
+              >
+                ✗ Reject & Stop
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallLine({ tc }) {
+  const [showResult, setShowResult] = useState(false);
+  const toolName = tc.input?.tool || (tc.tool === 'execute_bash' ? 'bash' : tc.tool) || 'unknown';
+  const command = tc.input?.command;
+  const params = tc.input?.parameters || {};
+  const rawArgs = params.__raw_args__;
+  const result = tc.result_preview;
+
+  // Build brief param display
+  let paramStr = '';
+  if (command) {
+    paramStr = command.length > 70 ? command.slice(0, 70) + '…' : command;
+  } else if (rawArgs) {
+    paramStr = rawArgs.length > 70 ? rawArgs.slice(0, 70) + '…' : rawArgs;
+  } else {
+    paramStr = Object.entries(params)
+      .filter(([k]) => !['__raw_args__', '__scope__'].includes(k))
+      .slice(0, 3)
+      .map(([k, v]) => `${k}=${String(v).slice(0, 20)}`)
+      .join(' ');
+  }
+
+  return (
+    <div className="text-xs bg-dark-900/80 rounded border border-dark-700">
+      <div className="flex items-center gap-2 px-2 py-1">
+        <span className="text-accent-cyan font-mono shrink-0">{toolName}</span>
+        {paramStr && (
+          <span className="text-gray-500 font-mono truncate flex-1">{paramStr}</span>
+        )}
+        {result && (
+          <button
+            onClick={() => setShowResult(r => !r)}
+            className="text-gray-600 hover:text-gray-400 shrink-0 underline"
+          >
+            {showResult ? 'hide' : 'result'}
+          </button>
+        )}
+      </div>
+      {showResult && result && (
+        <div className="px-2 pb-2 text-gray-500 font-mono whitespace-pre-wrap text-xs border-t border-dark-700 max-h-32 overflow-y-auto">
+          {result}
+        </div>
+      )}
     </div>
   );
 }

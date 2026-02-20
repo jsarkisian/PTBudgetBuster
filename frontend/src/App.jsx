@@ -34,6 +34,7 @@ export default function App() {
   const [findings, setFindings] = useState([]);
   const [tools, setTools] = useState({});
   const [pendingApproval, setPendingApproval] = useState(null);
+  const [autoHistory, setAutoHistory] = useState([]);
   const [showNewSession, setShowNewSession] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [health, setHealth] = useState(null);
@@ -103,21 +104,53 @@ export default function App() {
       case 'new_finding':
         setFindings(prev => [...prev, event.finding]);
         break;
-      case 'auto_step_pending':
+      case 'auto_step_pending': {
+        const stepEntry = {
+          type: 'step', stepId: event.step_id, stepNumber: event.step_number,
+          description: event.description, toolCalls: event.tool_calls,
+          status: 'pending', timestamp: event.timestamp,
+        };
         setPendingApproval({
           stepId: event.step_id, stepNumber: event.step_number,
           description: event.description, toolCalls: event.tool_calls,
         });
+        setAutoHistory(prev => [...prev, stepEntry]);
         break;
+      }
       case 'auto_step_decision':
         setPendingApproval(null);
+        setAutoHistory(prev => prev.map(e =>
+          e.stepId === event.step_id
+            ? { ...e, status: event.approved ? 'approved' : 'rejected' }
+            : e
+        ));
+        break;
+      case 'auto_step_complete':
+        setAutoHistory(prev => prev.map(e =>
+          e.stepId === event.step_id ? { ...e, status: 'approved' } : e
+        ));
         break;
       case 'auto_mode_changed':
+        if (event.enabled) setAutoHistory([]);
+        setOutputs(prev => [...prev, {
+          id: `auto-${Date.now()}`, type: 'auto_status',
+          message: event.enabled ? `Autonomous mode started: ${event.objective || ''}` : 'Autonomous mode stopped',
+          timestamp: event.timestamp,
+        }]);
+        setAutoHistory(prev => [...prev, {
+          type: 'status',
+          message: event.enabled ? `Started: ${event.objective || ''}` : 'Autonomous mode stopped',
+          timestamp: event.timestamp,
+        }]);
+        break;
       case 'auto_status':
         setOutputs(prev => [...prev, {
           id: `auto-${Date.now()}`, type: 'auto_status',
-          message: event.message || (event.enabled ? 'Autonomous mode enabled' : 'Autonomous mode disabled'),
+          message: event.message,
           timestamp: event.timestamp,
+        }]);
+        setAutoHistory(prev => [...prev, {
+          type: 'status', message: event.message, timestamp: event.timestamp,
         }]);
         break;
       case 'presence_update':
@@ -347,7 +380,7 @@ export default function App() {
                   <FindingsPanel findings={findings} />
                 )}
                 {activeTab === 'auto' && activeSession && (
-                  <AutoPanel session={activeSession} pendingApproval={pendingApproval}
+                  <AutoPanel session={activeSession} pendingApproval={pendingApproval} autoHistory={autoHistory}
                     onStart={async (obj, steps) => { await api.startAutonomous({ session_id: activeSession.id, enabled: true, objective: obj, max_steps: steps }); }}
                     onStop={async () => { await api.stopAutonomous({ session_id: activeSession.id }); }}
                     onApprove={async (stepId, approved) => { await api.approveStep({ session_id: activeSession.id, step_id: stepId, approved }); setPendingApproval(null); }}
