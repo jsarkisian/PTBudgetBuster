@@ -8,6 +8,7 @@ The backend service communicates with this server to execute tools.
 import asyncio
 import json
 import os
+import shlex
 import signal
 import subprocess
 import time
@@ -69,6 +70,12 @@ def build_command(tool_name: str, parameters: dict) -> list:
     """Build command from tool definition and parameters."""
     tool_def = TOOL_DEFS[tool_name]
     binary = tool_def["binary"]
+
+    # Free-form mode: user typed the full argument string
+    raw_args = parameters.get("__raw_args__", "").strip()
+    if raw_args:
+        return [binary] + shlex.split(raw_args)
+
     cmd_parts = [binary] + tool_def.get("default_args", [])
     
     for param_name, param_value in parameters.items():

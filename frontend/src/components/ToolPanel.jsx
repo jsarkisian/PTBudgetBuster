@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import ToolParamForm from './ToolParamForm';
 
 export default function ToolPanel({ tools, onExecute, onBash, loading }) {
   const [selectedTool, setSelectedTool] = useState('');
-  const [params, setParams] = useState({});
+  const [rawArgs, setRawArgs] = useState('');
   const [bashCmd, setBashCmd] = useState('');
   const [mode, setMode] = useState('tool'); // tool | bash
 
@@ -15,17 +14,13 @@ export default function ToolPanel({ tools, onExecute, onBash, loading }) {
       await onBash(bashCmd.trim());
     } else {
       if (!selectedTool) return;
-      await onExecute(selectedTool, params);
+      await onExecute(selectedTool, { __raw_args__: rawArgs.trim() });
     }
   };
 
   const handleToolChange = (toolName) => {
     setSelectedTool(toolName);
-    setParams({});
-  };
-
-  const handleParamChange = (key, value) => {
-    setParams(prev => ({ ...prev, [key]: value }));
+    setRawArgs('');
   };
 
   const categories = {};
@@ -100,12 +95,24 @@ export default function ToolPanel({ tools, onExecute, onBash, loading }) {
                   <p className="text-xs text-gray-400">{toolDef.description}</p>
                 </div>
 
-                {/* Parameters */}
-                <ToolParamForm
-                  toolDef={toolDef}
-                  params={params}
-                  onChange={handleParamChange}
-                />
+                {/* Free-form arguments */}
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1 font-medium">
+                    Arguments
+                    <span className="text-gray-600 font-normal ml-2">— type the flags and values exactly as you would on the command line</span>
+                  </label>
+                  <div className="flex items-start gap-2">
+                    <span className="font-mono text-xs text-accent-cyan mt-2 shrink-0">{selectedTool}</span>
+                    <textarea
+                      value={rawArgs}
+                      onChange={e => setRawArgs(e.target.value)}
+                      placeholder={buildPlaceholder(toolDef)}
+                      className="input font-mono text-xs flex-1 min-h-[72px]"
+                      rows={3}
+                    />
+                  </div>
+                  <ParamHints toolDef={toolDef} />
+                </div>
               </div>
             )}
           </div>
@@ -133,4 +140,46 @@ function RiskBadge({ level }) {
     high: 'badge-high',
   };
   return <span className={colors[level] || 'badge-info'}>{level}</span>;
+}
+
+/** Build a placeholder showing common flags for the selected tool */
+function buildPlaceholder(toolDef) {
+  if (!toolDef?.parameters) return 'e.g., -u https://example.com';
+  const parts = [];
+  for (const [, pDef] of Object.entries(toolDef.parameters).slice(0, 3)) {
+    if (pDef.flag && pDef.description) {
+      parts.push(`${pDef.flag} <${pDef.description.split(' ').slice(0, 2).join('-').toLowerCase()}>`);
+    }
+  }
+  return parts.length ? parts.join(' ') : 'e.g., -u https://example.com';
+}
+
+/** Show a collapsed reference list of available flags */
+function ParamHints({ toolDef }) {
+  const [open, setOpen] = React.useState(false);
+  const params = Object.entries(toolDef?.parameters || {});
+  if (!params.length) return null;
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="text-xs text-gray-600 hover:text-gray-400 underline"
+      >
+        {open ? 'Hide' : 'Show'} available flags
+      </button>
+      {open && (
+        <div className="mt-1 p-2 bg-dark-900 border border-dark-600 rounded space-y-1">
+          {params.map(([name, pDef]) => (
+            <div key={name} className="flex gap-2 text-xs">
+              <span className="font-mono text-accent-cyan shrink-0 w-24">{pDef.flag || name}</span>
+              <span className="text-gray-500">{pDef.description}</span>
+              {pDef.required && <span className="text-accent-red shrink-0">required</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

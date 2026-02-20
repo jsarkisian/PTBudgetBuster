@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
-import ToolParamForm from './ToolParamForm';
 
 const STATUS_COLORS = {
   scheduled: 'text-accent-blue',
@@ -27,7 +26,7 @@ export default function SchedulerPanel({ session, tools }) {
   const [runTime, setRunTime] = useState('00:00');
   const [cronExpr, setCronExpr] = useState('');
   const [label, setLabel] = useState('');
-  const [params, setParams] = useState({});
+  const [rawArgs, setRawArgs] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -60,7 +59,7 @@ export default function SchedulerPanel({ session, tools }) {
       const job = await api.createSchedule({
         session_id: session.id,
         tool,
-        parameters: params,
+        parameters: { __raw_args__: rawArgs.trim() },
         schedule_type: scheduleType,
         run_at: runAtISO,
         cron_expr: scheduleType === 'cron' ? cronExpr.trim() : undefined,
@@ -68,7 +67,7 @@ export default function SchedulerPanel({ session, tools }) {
       });
       setJobs(prev => [...prev, job]);
       setShowForm(false);
-      setTool(''); setLabel(''); setRunDate(''); setRunTime('00:00'); setCronExpr(''); setParams({});
+      setTool(''); setLabel(''); setRunDate(''); setRunTime('00:00'); setCronExpr(''); setRawArgs('');
     } catch (e) {
       setFormError(e.message || 'Failed to create schedule');
     } finally {
@@ -93,6 +92,7 @@ export default function SchedulerPanel({ session, tools }) {
   };
 
   const toolList = Object.keys(tools || {});
+  const toolDef = tools?.[tool];
 
   return (
     <div className="h-full flex flex-col">
@@ -116,7 +116,7 @@ export default function SchedulerPanel({ session, tools }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-gray-400 mb-1">Tool *</label>
-              <select value={tool} onChange={e => { setTool(e.target.value); setParams({}); }} className="input text-xs w-full">
+              <select value={tool} onChange={e => { setTool(e.target.value); setRawArgs(''); }} className="input text-xs w-full">
                 <option value="">Select tool...</option>
                 {toolList.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
@@ -127,16 +127,22 @@ export default function SchedulerPanel({ session, tools }) {
             </div>
           </div>
 
-          {tool && tools[tool] && (
+          {tool && (
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Parameters</label>
-              <div className="bg-dark-900 border border-dark-600 rounded p-3">
-                <ToolParamForm
-                  toolDef={tools[tool]}
-                  params={params}
-                  onChange={(key, value) => setParams(prev => ({ ...prev, [key]: value }))}
+              <label className="block text-xs text-gray-400 mb-1">
+                Arguments
+                <span className="text-gray-600 font-normal ml-2">— flags and values exactly as on the command line</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs text-accent-cyan shrink-0">{tool}</span>
+                <input
+                  value={rawArgs}
+                  onChange={e => setRawArgs(e.target.value)}
+                  placeholder={buildPlaceholder(toolDef)}
+                  className="input font-mono text-xs flex-1"
                 />
               </div>
+              {toolDef && <FlagHints toolDef={toolDef} />}
             </div>
           )}
 
@@ -215,6 +221,9 @@ export default function SchedulerPanel({ session, tools }) {
                     </div>
                     {job.label && <p className="text-xs text-gray-300 mb-1">{job.label}</p>}
                     <div className="text-xs text-gray-500 space-y-0.5">
+                      {job.parameters?.__raw_args__ && (
+                        <div className="font-mono text-gray-400">{job.tool} {job.parameters.__raw_args__}</div>
+                      )}
                       {job.schedule_type === 'once' && job.run_at && (
                         <div>Run at: {new Date(job.run_at).toLocaleString()}</div>
                       )}
@@ -244,6 +253,46 @@ export default function SchedulerPanel({ session, tools }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function buildPlaceholder(toolDef) {
+  if (!toolDef?.parameters) return 'e.g., -u https://example.com';
+  const parts = [];
+  for (const [, pDef] of Object.entries(toolDef.parameters).slice(0, 3)) {
+    if (pDef.flag && pDef.description) {
+      parts.push(`${pDef.flag} <${pDef.description.split(' ').slice(0, 2).join('-').toLowerCase()}>`);
+    }
+  }
+  return parts.length ? parts.join(' ') : 'e.g., -u https://example.com';
+}
+
+function FlagHints({ toolDef }) {
+  const [open, setOpen] = React.useState(false);
+  const params = Object.entries(toolDef?.parameters || {});
+  if (!params.length) return null;
+
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="text-xs text-gray-600 hover:text-gray-400 underline"
+      >
+        {open ? 'Hide' : 'Show'} available flags
+      </button>
+      {open && (
+        <div className="mt-1 p-2 bg-dark-900 border border-dark-600 rounded space-y-1">
+          {params.map(([name, pDef]) => (
+            <div key={name} className="flex gap-2 text-xs">
+              <span className="font-mono text-accent-cyan shrink-0 w-24">{pDef.flag || name}</span>
+              <span className="text-gray-500">{pDef.description}</span>
+              {pDef.required && <span className="text-accent-red shrink-0">required</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
