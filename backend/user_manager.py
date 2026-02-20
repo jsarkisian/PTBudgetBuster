@@ -141,7 +141,7 @@ class UserManager:
                     data = json.load(f)
                 for user_data in data.get("users", []):
                     user = User.from_dict(user_data)
-                    self.users[user.username] = user
+                    self.users[user.username.lower()] = user
                 print(f"[INFO] Loaded {len(self.users)} user(s)")
             except Exception as e:
                 print(f"[WARN] Failed to load users: {e}")
