@@ -5,7 +5,9 @@ Supports autonomous mode with approval gates for each action.
 """
 
 import asyncio
+import ipaddress
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Callable, Optional
@@ -14,6 +16,95 @@ import anthropic
 import httpx
 
 from session_manager import Session
+
+
+# Patterns to redact from tool output before sending to Claude
+_REDACT_PATTERNS = [
+    # Private keys
+    (re.compile(r'-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----', re.DOTALL), '[REDACTED-PRIVATE-KEY]'),
+    # Passwords / secrets in key=value form
+    (re.compile(r'(password|passwd|pwd|secret|token|api[_-]?key|auth[_-]?key)\s*[=:]\s*\S+', re.IGNORECASE), r'\1=[REDACTED]'),
+    # Bearer tokens in HTTP headers
+    (re.compile(r'(Authorization:\s*Bearer\s+)\S+', re.IGNORECASE), r'\1[REDACTED]'),
+    # AWS access key IDs
+    (re.compile(r'\bAKIA[0-9A-Z]{16}\b'), '[REDACTED-AWS-KEY]'),
+    # SSNs
+    (re.compile(r'\b\d{3}-\d{2}-\d{4}\b'), '[REDACTED-SSN]'),
+]
+
+
+def _redact_output(text: str) -> str:
+    """Redact sensitive patterns from tool output before sending to Claude."""
+    for pattern, replacement in _REDACT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+def _is_in_scope(target: str, scope: list[str]) -> bool:
+    """Return True if target matches any entry in scope list."""
+    if not scope:
+        return True  # No scope defined — allow all
+
+    target = target.strip().lower().rstrip('/')
+    # Strip scheme for URL targets
+    for scheme in ('https://', 'http://'):
+        if target.startswith(scheme):
+            target = target[len(scheme):]
+            break
+    # Strip path component
+    target = target.split('/')[0]
+
+    for entry in scope:
+        entry = entry.strip().lower().rstrip('/')
+        for scheme in ('https://', 'http://'):
+            if entry.startswith(scheme):
+                entry = entry[len(scheme):]
+                break
+        entry = entry.split('/')[0]
+
+        # Exact match
+        if target == entry:
+            return True
+        # Wildcard: *.example.com matches sub.example.com and example.com
+        if entry.startswith('*.'):
+            base = entry[2:]
+            if target == base or target.endswith('.' + base):
+                return True
+        # Parent domain: example.com matches anything.example.com
+        if target.endswith('.' + entry):
+            return True
+        # CIDR / IP range
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+            try:
+                if ipaddress.ip_address(target) in network:
+                    return True
+            except ValueError:
+                pass
+        except ValueError:
+            pass
+
+    return False
+
+
+def _extract_target(tool_name: str, tool_input: dict) -> Optional[str]:
+    """Extract the primary target from tool parameters for scope checking."""
+    if tool_name == "execute_tool":
+        params = tool_input.get("parameters", {})
+        for key in ("target", "host", "domain", "url", "ip", "hosts", "u"):
+            if key in params:
+                return str(params[key])
+    elif tool_name == "execute_bash":
+        command = tool_input.get("command", "")
+        # Look for IP addresses
+        ips = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b', command)
+        if ips:
+            return ips[0]
+        # Look for domain-like arguments (e.g. example.com)
+        domains = re.findall(r'\b(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b', command)
+        if domains:
+            return domains[0]
+    return None
 
 
 SYSTEM_PROMPT = """You are an expert penetration tester assistant operating within a sanctioned, ethical security assessment engagement. You have access to a suite of security testing tools.
@@ -192,7 +283,17 @@ class PentestAgent:
     
     async def _execute_tool_call(self, tool_name: str, tool_input: dict) -> str:
         """Execute a tool call and return the result."""
-        
+
+        # --- Scope enforcement ---
+        target = _extract_target(tool_name, tool_input)
+        if target and not _is_in_scope(target, self.session.target_scope):
+            scope_str = ", ".join(self.session.target_scope) if self.session.target_scope else "none defined"
+            return (
+                f"[SCOPE VIOLATION] Target '{target}' is outside the defined engagement scope.\n"
+                f"Allowed scope: {scope_str}\n"
+                f"Tool execution was blocked. Only test targets within the defined scope."
+            )
+
         if tool_name == "execute_tool":
             async with httpx.AsyncClient(base_url=self.toolbox_url, timeout=600.0) as client:
                 task_id = str(uuid.uuid4())[:8]
@@ -244,9 +345,9 @@ class PentestAgent:
                 output = result.get("output", "")
                 error = result.get("error", "")
                 status = result.get("status", "unknown")
-                
-                return f"Status: {status}\nOutput:\n{output}\n{f'Errors: {error}' if error else ''}"
-        
+
+                return f"Status: {status}\nOutput:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
+
         elif tool_name == "execute_bash":
             async with httpx.AsyncClient(base_url=self.toolbox_url, timeout=600.0) as client:
                 task_id = str(uuid.uuid4())[:8]
@@ -293,7 +394,7 @@ class PentestAgent:
                 
                 output = result.get("output", "")
                 error = result.get("error", "")
-                return f"Output:\n{output}\n{f'Errors: {error}' if error else ''}"
+                return f"Output:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
         
         elif tool_name == "record_finding":
             finding = self.session.add_finding(
