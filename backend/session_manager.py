@@ -189,6 +189,38 @@ CURRENT FINDINGS:
             replace_url_cred, text,
         )
 
+        # Authorization headers in input
+        def replace_auth_header(m: re.Match) -> str:
+            prefix, value = m.group(1), m.group(2)
+            token = next_token()
+            self._token_store[token] = value
+            return f"{prefix}{token}"
+
+        text = re.sub(
+            r'(Authorization:\s*(?:Bearer|Token|Basic|Digest|ApiKey)\s+)(\S+)',
+            replace_auth_header, text, flags=re.IGNORECASE,
+        )
+
+        # Known API key formats (tokenize the whole matched value)
+        _KEY_PATTERNS = [
+            r'\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b',  # JWT
+            r'\bAKIA[0-9A-Z]{16}\b',                                          # AWS
+            r'\bgh[psopu]_[A-Za-z0-9]{36,}\b',                               # GitHub
+            r'\bglpat-[A-Za-z0-9_\-]{20,}\b',                               # GitLab
+            r'\bxox[bpares]-[A-Za-z0-9\-]{10,}\b',                          # Slack
+            r'\bsk-[A-Za-z0-9\-_]{20,}\b',                                   # OpenAI/Anthropic
+            r'\bnpm_[A-Za-z0-9]{36,}\b',                                      # npm
+        ]
+
+        def replace_known_key(m: re.Match) -> str:
+            value = m.group(0)
+            token = next_token()
+            self._token_store[token] = value
+            return token
+
+        for pattern in _KEY_PATTERNS:
+            text = re.sub(pattern, replace_known_key, text)
+
         return text
 
     def detokenize(self, text: str) -> str:

@@ -24,10 +24,22 @@ _REDACT_PATTERNS = [
     (re.compile(r'-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----', re.DOTALL), '[REDACTED-PRIVATE-KEY]'),
     # Passwords / secrets in key=value form
     (re.compile(r'(password|passwd|pwd|secret|token|api[_-]?key|auth[_-]?key)\s*[=:]\s*\S+', re.IGNORECASE), r'\1=[REDACTED]'),
-    # Bearer tokens in HTTP headers
-    (re.compile(r'(Authorization:\s*Bearer\s+)\S+', re.IGNORECASE), r'\1[REDACTED]'),
+    # Authorization headers (Bearer, Token, Basic, etc.)
+    (re.compile(r'(Authorization:\s*(?:Bearer|Token|Basic|Digest|ApiKey)\s+)\S+', re.IGNORECASE), r'\1[REDACTED]'),
+    # JWT tokens (three base64url segments)
+    (re.compile(r'\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b'), '[REDACTED-JWT]'),
     # AWS access key IDs
     (re.compile(r'\bAKIA[0-9A-Z]{16}\b'), '[REDACTED-AWS-KEY]'),
+    # GitHub tokens (PAT, app, OAuth)
+    (re.compile(r'\bgh[psopu]_[A-Za-z0-9]{36,}\b'), '[REDACTED-GITHUB-TOKEN]'),
+    # GitLab tokens
+    (re.compile(r'\bglpat-[A-Za-z0-9_\-]{20,}\b'), '[REDACTED-GITLAB-TOKEN]'),
+    # Slack tokens
+    (re.compile(r'\bxox[bpares]-[A-Za-z0-9\-]{10,}\b'), '[REDACTED-SLACK-TOKEN]'),
+    # OpenAI / Anthropic style keys (sk-...)
+    (re.compile(r'\bsk-[A-Za-z0-9\-_]{20,}\b'), '[REDACTED-API-KEY]'),
+    # npm tokens
+    (re.compile(r'\bnpm_[A-Za-z0-9]{36,}\b'), '[REDACTED-NPM-TOKEN]'),
     # SSNs
     (re.compile(r'\b\d{3}-\d{2}-\d{4}\b'), '[REDACTED-SSN]'),
 ]
