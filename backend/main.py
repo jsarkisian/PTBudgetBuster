@@ -727,7 +727,12 @@ async def export_session(session_id: str):
         raise HTTPException(404, "Session not found")
 
     buf = io.BytesIO()
-    safe_name = session.name.replace(" ", "_").replace("/", "-")[:40]
+    # Strip characters that are invalid or problematic in filenames / HTTP headers,
+    # then collapse runs of underscores and trim to 60 chars.
+    safe_name = re.sub(r'[^\w\s\-]', '', session.name)   # keep word chars, spaces, hyphens
+    safe_name = re.sub(r'[\s]+', '_', safe_name)          # spaces → underscores
+    safe_name = re.sub(r'_+', '_', safe_name).strip('_')  # collapse runs
+    safe_name = safe_name[:60] or "engagement"
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # 1. Session metadata + chat + events + findings as JSON
@@ -826,7 +831,7 @@ async def export_session(session_id: str):
     return StreamingResponse(
         buf,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
