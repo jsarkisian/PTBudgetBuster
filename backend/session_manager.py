@@ -268,8 +268,11 @@ class SessionManager:
     def _load_all(self):
         """Load all sessions from disk on startup."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        RESERVED = {"clients.json", "schedules.json", "settings.json", "users.json"}
         loaded = 0
         for path in DATA_DIR.glob("*.json"):
+            if path.name in RESERVED:
+                continue
             try:
                 with open(path) as f:
                     data = json.load(f)

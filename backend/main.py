@@ -1127,7 +1127,7 @@ async def _restore_schedules():
     """On startup, re-register non-completed/non-disabled jobs."""
     now = datetime.now(timezone.utc)
     for job in schedule_mgr.list_all():
-        if job.status in ("completed", "disabled", "failed"):
+        if job.status in ("completed", "disabled", "failed", "running"):
             continue
         if job.schedule_type == "once" and job.run_at:
             try:
