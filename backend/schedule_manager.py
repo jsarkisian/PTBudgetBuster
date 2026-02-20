@@ -157,6 +157,35 @@ class ScheduleManager:
         self._save()
         return job
 
+    def update(
+        self,
+        job_id: str,
+        tool: str = None,
+        parameters: dict = None,
+        label: str = None,
+        schedule_type: str = None,
+        run_at: str = None,
+        cron_expr: str = None,
+    ) -> Optional[ScheduledJob]:
+        job = self.jobs.get(job_id)
+        if not job:
+            return None
+        if tool is not None:
+            job.tool = tool
+        if parameters is not None:
+            job.parameters = parameters
+        if label is not None:
+            job.label = label
+        if schedule_type is not None:
+            job.schedule_type = schedule_type
+        if run_at is not None:
+            job.run_at = run_at
+        if cron_expr is not None:
+            job.cron_expr = cron_expr
+        job.status = "scheduled"
+        self._save()
+        return job
+
     def disable(self, job_id: str) -> Optional[ScheduledJob]:
         job = self.jobs.get(job_id)
         if not job:

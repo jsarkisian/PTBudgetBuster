@@ -136,6 +136,8 @@ export const api = {
   deleteSchedule: (id) => request(`/schedules/${id}`, { method: 'DELETE' }),
   disableSchedule: (id) => request(`/schedules/${id}/disable`, { method: 'POST' }),
   enableSchedule: (id) => request(`/schedules/${id}/enable`, { method: 'POST' }),
+  updateSchedule: (id, data) => request(`/schedules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  runScheduleNow: (id) => request(`/schedules/${id}/run`, { method: 'POST' }),
 
   // Tool Management
   getToolDefinitions: () => request('/tools/definitions'),

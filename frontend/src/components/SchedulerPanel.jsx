@@ -19,7 +19,7 @@ export default function SchedulerPanel({ session, tools }) {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
-  // Form state
+  // Create form state
   const [tool, setTool] = useState('');
   const [scheduleType, setScheduleType] = useState('once');
   const [runDate, setRunDate] = useState('');
@@ -29,6 +29,10 @@ export default function SchedulerPanel({ session, tools }) {
   const [rawArgs, setRawArgs] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // Edit state: { jobId } or null
+  const [editingId, setEditingId] = useState(null);
+  const [runningId, setRunningId] = useState(null);
 
   const loadJobs = async () => {
     if (!session) return;
@@ -78,6 +82,7 @@ export default function SchedulerPanel({ session, tools }) {
   const handleDelete = async (id) => {
     await api.deleteSchedule(id);
     setJobs(prev => prev.filter(j => j.id !== id));
+    if (editingId === id) setEditingId(null);
   };
 
   const handleToggle = async (job) => {
@@ -89,6 +94,24 @@ export default function SchedulerPanel({ session, tools }) {
     } catch (e) {
       console.error('Failed to toggle schedule:', e);
     }
+  };
+
+  const handleRunNow = async (job) => {
+    setRunningId(job.id);
+    try {
+      await api.runScheduleNow(job.id);
+      // Poll briefly to pick up status change
+      setTimeout(loadJobs, 1500);
+    } catch (e) {
+      console.error('Failed to run job:', e);
+    } finally {
+      setRunningId(null);
+    }
+  };
+
+  const handleSaveEdit = (updatedJob) => {
+    setJobs(prev => prev.map(j => j.id === updatedJob.id ? updatedJob : j));
+    setEditingId(null);
   };
 
   const toolList = Object.keys(tools || {});
@@ -164,18 +187,8 @@ export default function SchedulerPanel({ session, tools }) {
             <div>
               <label className="block text-xs text-gray-400 mb-1">Run At *</label>
               <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={runDate}
-                  onChange={e => setRunDate(e.target.value)}
-                  className="input flex-1"
-                />
-                <input
-                  type="time"
-                  value={runTime}
-                  onChange={e => setRunTime(e.target.value)}
-                  className="input w-32"
-                />
+                <input type="date" value={runDate} onChange={e => setRunDate(e.target.value)} className="input flex-1" />
+                <input type="time" value={runTime} onChange={e => setRunTime(e.target.value)} className="input w-32" />
               </div>
             </div>
           ) : (
@@ -207,47 +220,77 @@ export default function SchedulerPanel({ session, tools }) {
         ) : (
           <div className="space-y-2">
             {jobs.map(job => (
-              <div key={job.id} className="bg-dark-800 border border-dark-600 rounded p-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-sm text-accent-cyan">{job.tool}</span>
-                      <span className={`text-[10px] px-1.5 rounded ${TYPE_COLORS[job.schedule_type] || ''}`}>
-                        {job.schedule_type}
-                      </span>
-                      <span className={`text-xs ${STATUS_COLORS[job.status] || 'text-gray-400'}`}>
-                        {job.status}
-                      </span>
-                    </div>
-                    {job.label && <p className="text-xs text-gray-300 mb-1">{job.label}</p>}
-                    <div className="text-xs text-gray-500 space-y-0.5">
-                      {job.parameters?.__raw_args__ && (
-                        <div className="font-mono text-gray-400">{job.tool} {job.parameters.__raw_args__}</div>
-                      )}
-                      {job.schedule_type === 'once' && job.run_at && (
-                        <div>Run at: {new Date(job.run_at).toLocaleString()}</div>
-                      )}
-                      {job.schedule_type === 'cron' && (
-                        <div>Cron: <span className="font-mono text-gray-400">{job.cron_expr}</span></div>
-                      )}
-                      {job.last_run && <div>Last run: {new Date(job.last_run).toLocaleString()}</div>}
-                      <div>Run count: {job.run_count}</div>
-                      {job.created_by && <div>Created by: {job.created_by}</div>}
+              <div key={job.id} className="bg-dark-800 border border-dark-600 rounded">
+                {editingId === job.id ? (
+                  <EditJobForm
+                    job={job}
+                    tools={tools}
+                    onSave={handleSaveEdit}
+                    onCancel={() => setEditingId(null)}
+                  />
+                ) : (
+                  <div className="p-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-sm text-accent-cyan">{job.tool}</span>
+                          <span className={`text-[10px] px-1.5 rounded ${TYPE_COLORS[job.schedule_type] || ''}`}>
+                            {job.schedule_type}
+                          </span>
+                          <span className={`text-xs ${STATUS_COLORS[job.status] || 'text-gray-400'}`}>
+                            {job.status}
+                          </span>
+                        </div>
+                        {job.label && <p className="text-xs text-gray-300 mb-1">{job.label}</p>}
+                        <div className="text-xs text-gray-500 space-y-0.5">
+                          {job.parameters?.__raw_args__ && (
+                            <div className="font-mono text-gray-400">{job.tool} {job.parameters.__raw_args__}</div>
+                          )}
+                          {job.schedule_type === 'once' && job.run_at && (
+                            <div>Run at: {new Date(job.run_at).toLocaleString()}</div>
+                          )}
+                          {job.schedule_type === 'cron' && (
+                            <div>Cron: <span className="font-mono text-gray-400">{job.cron_expr}</span></div>
+                          )}
+                          {job.last_run && <div>Last run: {new Date(job.last_run).toLocaleString()}</div>}
+                          <div>Run count: {job.run_count}</div>
+                          {job.created_by && <div>Created by: {job.created_by}</div>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 ml-3 shrink-0">
+                        {/* Run Now */}
+                        <button
+                          onClick={() => handleRunNow(job)}
+                          disabled={runningId === job.id}
+                          className="text-xs btn-ghost px-2 py-1 text-accent-green"
+                          title="Run now"
+                        >
+                          {runningId === job.id ? '…' : '▶▶'}
+                        </button>
+                        {/* Edit */}
+                        <button
+                          onClick={() => setEditingId(job.id)}
+                          className="text-xs btn-ghost px-2 py-1"
+                          title="Edit"
+                        >
+                          ✎
+                        </button>
+                        {/* Enable/Disable */}
+                        {job.status !== 'completed' && (
+                          <button
+                            onClick={() => handleToggle(job)}
+                            className="text-xs btn-ghost px-2 py-1"
+                            title={job.status === 'disabled' ? 'Enable' : 'Disable'}
+                          >
+                            {job.status === 'disabled' ? '▶' : '⏸'}
+                          </button>
+                        )}
+                        {/* Delete */}
+                        <button onClick={() => handleDelete(job.id)} className="text-xs text-gray-500 hover:text-accent-red px-1">✕</button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 ml-3">
-                    {job.status !== 'completed' && (
-                      <button
-                        onClick={() => handleToggle(job)}
-                        className="text-xs btn-ghost px-2 py-1"
-                        title={job.status === 'disabled' ? 'Enable' : 'Disable'}
-                      >
-                        {job.status === 'disabled' ? '▶' : '⏸'}
-                      </button>
-                    )}
-                    <button onClick={() => handleDelete(job.id)} className="text-xs text-gray-500 hover:text-accent-red px-1">✕</button>
-                  </div>
-                </div>
+                )}
               </div>
             ))}
           </div>
@@ -257,6 +300,138 @@ export default function SchedulerPanel({ session, tools }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────
+//  Inline edit form
+// ─────────────────────────────────────────────────────────────
+function EditJobForm({ job, tools, onSave, onCancel }) {
+  const [tool, setTool] = useState(job.tool);
+  const [rawArgs, setRawArgs] = useState(job.parameters?.__raw_args__ || '');
+  const [label, setLabel] = useState(job.label || '');
+  const [scheduleType, setScheduleType] = useState(job.schedule_type);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // Parse run_at into date + time strings
+  const parseRunAt = (iso) => {
+    if (!iso) return { date: '', time: '00:00' };
+    const d = new Date(iso);
+    const date = d.toLocaleDateString('en-CA'); // YYYY-MM-DD
+    const time = d.toTimeString().slice(0, 5);   // HH:MM
+    return { date, time };
+  };
+  const parsed = parseRunAt(job.run_at);
+  const [runDate, setRunDate] = useState(parsed.date);
+  const [runTime, setRunTime] = useState(parsed.time);
+  const [cronExpr, setCronExpr] = useState(job.cron_expr || '');
+
+  const toolDef = tools?.[tool];
+  const toolList = Object.keys(tools || {});
+
+  const handleSave = async () => {
+    setError('');
+    if (!tool) { setError('Select a tool'); return; }
+    if (scheduleType === 'once' && !runDate) { setError('Enter run date'); return; }
+    if (scheduleType === 'cron' && !cronExpr.trim()) { setError('Enter cron expression'); return; }
+
+    setSaving(true);
+    try {
+      const run_at = scheduleType === 'once'
+        ? new Date(`${runDate}T${runTime || '00:00'}`).toISOString()
+        : null;
+      const updated = await api.updateSchedule(job.id, {
+        tool,
+        parameters: { __raw_args__: rawArgs.trim() },
+        label: label.trim(),
+        schedule_type: scheduleType,
+        run_at: scheduleType === 'once' ? run_at : null,
+        cron_expr: scheduleType === 'cron' ? cronExpr.trim() : null,
+      });
+      onSave(updated);
+    } catch (e) {
+      setError(e.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="p-3 space-y-3">
+      <h4 className="text-xs font-semibold text-gray-300">Edit Scheduled Scan</h4>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Tool</label>
+          <select value={tool} onChange={e => { setTool(e.target.value); setRawArgs(''); }} className="input text-xs w-full">
+            {toolList.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Label</label>
+          <input value={label} onChange={e => setLabel(e.target.value)} className="input text-xs w-full" />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">
+          Arguments
+        </label>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-xs text-accent-cyan shrink-0">{tool}</span>
+          <input
+            value={rawArgs}
+            onChange={e => setRawArgs(e.target.value)}
+            placeholder={buildPlaceholder(toolDef)}
+            className="input font-mono text-xs flex-1"
+          />
+        </div>
+        {toolDef && <FlagHints toolDef={toolDef} />}
+      </div>
+
+      <div>
+        <label className="block text-xs text-gray-400 mb-2">Schedule Type</label>
+        <div className="flex gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+            <input type="radio" checked={scheduleType === 'once'} onChange={() => setScheduleType('once')} />
+            One-time
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer">
+            <input type="radio" checked={scheduleType === 'cron'} onChange={() => setScheduleType('cron')} />
+            Recurring (cron)
+          </label>
+        </div>
+      </div>
+
+      {scheduleType === 'once' ? (
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Run At</label>
+          <div className="flex gap-2">
+            <input type="date" value={runDate} onChange={e => setRunDate(e.target.value)} className="input flex-1" />
+            <input type="time" value={runTime} onChange={e => setRunTime(e.target.value)} className="input w-32" />
+          </div>
+        </div>
+      ) : (
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Cron Expression</label>
+          <input value={cronExpr} onChange={e => setCronExpr(e.target.value)} placeholder="0 2 * * *" className="input text-xs font-mono w-full" />
+          <p className="text-xs text-gray-600 mt-1">Format: minute hour day month weekday</p>
+        </div>
+      )}
+
+      {error && <p className="text-xs text-accent-red">{error}</p>}
+
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="btn-ghost text-xs px-3 py-1">Cancel</button>
+        <button onClick={handleSave} disabled={saving} className="btn-primary text-xs px-3 py-1">
+          {saving ? 'Saving...' : 'Save Changes'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Helpers
+// ─────────────────────────────────────────────────────────────
 function buildPlaceholder(toolDef) {
   if (!toolDef?.parameters) return 'e.g., -u https://example.com';
   const parts = [];

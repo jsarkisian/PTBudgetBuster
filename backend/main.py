@@ -1219,6 +1219,62 @@ async def enable_schedule(job_id: str):
     return job.to_dict()
 
 
+class UpdateScheduleRequest(BaseModel):
+    tool: Optional[str] = None
+    parameters: Optional[dict] = None
+    label: Optional[str] = None
+    schedule_type: Optional[str] = None
+    run_at: Optional[str] = None
+    cron_expr: Optional[str] = None
+
+
+@app.put("/api/schedules/{job_id}")
+async def update_schedule(job_id: str, req: UpdateScheduleRequest):
+    job = schedule_mgr.get(job_id)
+    if not job:
+        raise HTTPException(404, "Schedule not found")
+
+    # Validate cron expression if provided
+    new_cron = req.cron_expr if req.cron_expr is not None else job.cron_expr
+    new_type = req.schedule_type if req.schedule_type is not None else job.schedule_type
+    if new_type == "cron" and new_cron:
+        try:
+            CronTrigger.from_crontab(new_cron)
+        except Exception:
+            raise HTTPException(400, f"Invalid cron expression: {new_cron}")
+
+    # Remove old APScheduler job
+    try:
+        scheduler.remove_job(job_id)
+    except Exception:
+        pass
+
+    # Apply updates
+    job = schedule_mgr.update(
+        job_id,
+        tool=req.tool,
+        parameters=req.parameters,
+        label=req.label,
+        schedule_type=req.schedule_type,
+        run_at=req.run_at,
+        cron_expr=req.cron_expr,
+    )
+
+    # Re-register with updated trigger
+    _register_apscheduler_job(job)
+    return job.to_dict()
+
+
+@app.post("/api/schedules/{job_id}/run")
+async def run_schedule_now(job_id: str):
+    """Immediately execute a scheduled job regardless of its next scheduled time."""
+    job = schedule_mgr.get(job_id)
+    if not job:
+        raise HTTPException(404, "Schedule not found")
+    asyncio.create_task(_execute_scheduled_job(job_id))
+    return job.to_dict()
+
+
 @app.get("/api/sessions/{session_id}/schedules")
 async def list_session_schedules(session_id: str):
     return [j.to_dict() for j in schedule_mgr.list_for_session(session_id)]
