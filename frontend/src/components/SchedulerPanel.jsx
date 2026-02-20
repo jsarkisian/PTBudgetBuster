@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
+import ToolParamForm from './ToolParamForm';
 
 const STATUS_COLORS = {
   scheduled: 'text-accent-blue',
@@ -26,7 +27,7 @@ export default function SchedulerPanel({ session, tools }) {
   const [runTime, setRunTime] = useState('00:00');
   const [cronExpr, setCronExpr] = useState('');
   const [label, setLabel] = useState('');
-  const [params, setParams] = useState('{}');
+  const [params, setParams] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -51,14 +52,6 @@ export default function SchedulerPanel({ session, tools }) {
     if (scheduleType === 'once' && !runDate) { setFormError('Enter run date/time'); return; }
     if (scheduleType === 'cron' && !cronExpr.trim()) { setFormError('Enter cron expression'); return; }
 
-    let parsedParams = {};
-    try {
-      parsedParams = JSON.parse(params);
-    } catch {
-      setFormError('Parameters must be valid JSON');
-      return;
-    }
-
     setSubmitting(true);
     try {
       const runAtISO = scheduleType === 'once'
@@ -67,7 +60,7 @@ export default function SchedulerPanel({ session, tools }) {
       const job = await api.createSchedule({
         session_id: session.id,
         tool,
-        parameters: parsedParams,
+        parameters: params,
         schedule_type: scheduleType,
         run_at: runAtISO,
         cron_expr: scheduleType === 'cron' ? cronExpr.trim() : undefined,
@@ -75,7 +68,7 @@ export default function SchedulerPanel({ session, tools }) {
       });
       setJobs(prev => [...prev, job]);
       setShowForm(false);
-      setTool(''); setLabel(''); setRunDate(''); setRunTime('00:00'); setCronExpr(''); setParams('{}');
+      setTool(''); setLabel(''); setRunDate(''); setRunTime('00:00'); setCronExpr(''); setParams({});
     } catch (e) {
       setFormError(e.message || 'Failed to create schedule');
     } finally {
@@ -123,7 +116,7 @@ export default function SchedulerPanel({ session, tools }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-gray-400 mb-1">Tool *</label>
-              <select value={tool} onChange={e => setTool(e.target.value)} className="input text-xs w-full">
+              <select value={tool} onChange={e => { setTool(e.target.value); setParams({}); }} className="input text-xs w-full">
                 <option value="">Select tool...</option>
                 {toolList.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
@@ -134,10 +127,18 @@ export default function SchedulerPanel({ session, tools }) {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Parameters (JSON)</label>
-            <input value={params} onChange={e => setParams(e.target.value)} placeholder='{"target": "example.com"}' className="input text-xs font-mono w-full" />
-          </div>
+          {tool && tools[tool] && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Parameters</label>
+              <div className="bg-dark-900 border border-dark-600 rounded p-3">
+                <ToolParamForm
+                  toolDef={tools[tool]}
+                  params={params}
+                  onChange={(key, value) => setParams(prev => ({ ...prev, [key]: value }))}
+                />
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs text-gray-400 mb-2">Schedule Type</label>

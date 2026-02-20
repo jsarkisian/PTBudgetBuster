@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ToolParamForm from './ToolParamForm';
 
 export default function ToolPanel({ tools, onExecute, onBash, loading }) {
   const [selectedTool, setSelectedTool] = useState('');
@@ -100,36 +101,11 @@ export default function ToolPanel({ tools, onExecute, onBash, loading }) {
                 </div>
 
                 {/* Parameters */}
-                <div className="space-y-3">
-                  {Object.entries(toolDef.parameters || {}).map(([key, pDef]) => (
-                    <div key={key}>
-                      <label className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-                        <span className="font-mono">{key}</span>
-                        {pDef.required && <span className="text-accent-red">*</span>}
-                        <span className="text-gray-600">({pDef.type})</span>
-                      </label>
-                      {pDef.type === 'boolean' ? (
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={!!params[key]}
-                            onChange={(e) => handleParamChange(key, e.target.checked)}
-                            className="rounded bg-dark-700 border-dark-500"
-                          />
-                          <span className="text-gray-300 text-xs">{pDef.description}</span>
-                        </label>
-                      ) : (
-                        <input
-                          type={pDef.type === 'integer' ? 'number' : 'text'}
-                          value={params[key] || ''}
-                          onChange={(e) => handleParamChange(key, pDef.type === 'integer' ? parseInt(e.target.value) || '' : e.target.value)}
-                          placeholder={pDef.description}
-                          className="input text-xs"
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <ToolParamForm
+                  toolDef={toolDef}
+                  params={params}
+                  onChange={handleParamChange}
+                />
               </div>
             )}
           </div>
