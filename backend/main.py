@@ -790,24 +790,35 @@ async def export_session(session_id: str):
                 findings_lines.append("")
             zf.writestr(f"{safe_name}/findings_report.txt", "\n".join(findings_lines))
 
-        # 5. Fetch screenshots from toolbox and include them
-        try:
-            async with get_toolbox_client() as client:
-                resp = await client.get("/screenshots")
-                if resp.status_code == 200:
-                    screenshots = resp.json().get("screenshots", [])
-                    for ss in screenshots:
-                        try:
-                            img_resp = await client.get(f"/images/{ss['path']}")
-                            if img_resp.status_code == 200:
-                                zf.writestr(
-                                    f"{safe_name}/screenshots/{ss['name']}",
-                                    img_resp.content,
-                                )
-                        except Exception:
-                            pass
-        except Exception:
-            pass
+        # 5. Fetch screenshots from toolbox — only those belonging to this session's tasks
+        task_ids = {
+            evt.get("data", {}).get("task_id")
+            for evt in session.events
+            if evt.get("data", {}).get("task_id")
+        }
+        if task_ids:
+            try:
+                async with get_toolbox_client() as client:
+                    resp = await client.get("/screenshots")
+                    if resp.status_code == 200:
+                        screenshots = resp.json().get("screenshots", [])
+                        for ss in screenshots:
+                            # path is like "data/<task_id>/file.png" — only include
+                            # screenshots whose path contains a task ID from this session
+                            path_parts = ss["path"].replace("\\", "/").split("/")
+                            if not any(tid in path_parts for tid in task_ids):
+                                continue
+                            try:
+                                img_resp = await client.get(f"/images/{ss['path']}")
+                                if img_resp.status_code == 200:
+                                    zf.writestr(
+                                        f"{safe_name}/screenshots/{ss['name']}",
+                                        img_resp.content,
+                                    )
+                            except Exception:
+                                pass
+            except Exception:
+                pass
 
     buf.seek(0)
     filename = f"{safe_name}_export.zip"
