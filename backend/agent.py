@@ -284,7 +284,7 @@ class PentestAgent:
     async def _execute_tool_call(self, tool_name: str, tool_input: dict) -> str:
         """Execute a tool call and return the result."""
 
-        # --- Scope enforcement ---
+        # --- Scope enforcement (check before detokenizing so target is readable) ---
         target = _extract_target(tool_name, tool_input)
         if target and not _is_in_scope(target, self.session.target_scope):
             scope_str = ", ".join(self.session.target_scope) if self.session.target_scope else "none defined"
@@ -293,6 +293,9 @@ class PentestAgent:
                 f"Allowed scope: {scope_str}\n"
                 f"Tool execution was blocked. Only test targets within the defined scope."
             )
+
+        # --- De-tokenize: restore real credential values before execution ---
+        tool_input = self.session.detokenize_obj(tool_input)
 
         if tool_name == "execute_tool":
             async with httpx.AsyncClient(base_url=self.toolbox_url, timeout=600.0) as client:

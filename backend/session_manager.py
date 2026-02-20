@@ -6,6 +6,7 @@ Persists all data to JSON files on the shared volume.
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -32,6 +33,10 @@ class Session:
         self.auto_max_steps: int = 10
         self.auto_current_step: int = 0
         self.auto_pending_approval: Optional[dict] = None
+
+        # Credential token store (in-memory only, never persisted)
+        self._token_store: dict[str, str] = {}
+        self._token_counter: int = 0
     
     def add_message(self, role: str, content: str):
         self.messages.append({
@@ -144,6 +149,55 @@ CURRENT FINDINGS:
         session.findings = data.get("findings", [])
         return session
     
+    def tokenize_input(self, text: str) -> str:
+        """Replace credential values in user input with opaque tokens before sending to Claude."""
+
+        def next_token() -> str:
+            self._token_counter += 1
+            return f"[[_CRED_{self._token_counter}_]]"
+
+        # key=value or key: value credential patterns
+        def replace_kv(m: re.Match) -> str:
+            key, value = m.group(1), m.group(2)
+            token = next_token()
+            self._token_store[token] = value
+            return f"{key}={token}"
+
+        text = re.sub(
+            r'(password|passwd|pwd|secret|token|api[_-]?key|auth[_-]?key)\s*[=:]\s*(\S+)',
+            replace_kv, text, flags=re.IGNORECASE,
+        )
+
+        # URL embedded credentials: scheme://user:password@host
+        def replace_url_cred(m: re.Match) -> str:
+            scheme, user, password, host = m.group(1), m.group(2), m.group(3), m.group(4)
+            token = next_token()
+            self._token_store[token] = password
+            return f"{scheme}{user}:{token}@{host}"
+
+        text = re.sub(
+            r'(https?://)([^:@/\s]+):([^@/\s]+)@([^\s/]+)',
+            replace_url_cred, text,
+        )
+
+        return text
+
+    def detokenize(self, text: str) -> str:
+        """Substitute tokens back to real values."""
+        for token, value in self._token_store.items():
+            text = text.replace(token, value)
+        return text
+
+    def detokenize_obj(self, obj):
+        """Recursively detokenize strings inside a dict, list, or str."""
+        if isinstance(obj, str):
+            return self.detokenize(obj)
+        if isinstance(obj, dict):
+            return {k: self.detokenize_obj(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self.detokenize_obj(i) for i in obj]
+        return obj
+
     def _save(self):
         """Persist session to disk."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)

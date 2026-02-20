@@ -440,20 +440,23 @@ async def chat(req: ChatMessage):
     session = session_mgr.get(req.session_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    
-    session.add_message("user", req.message)
-    
+
+    # Tokenize credentials before they reach Claude
+    safe_message = session.tokenize_input(req.message)
+
+    session.add_message("user", safe_message)
+
     agent = PentestAgent(
         api_key=settings.anthropic_api_key,
         toolbox_url=toolbox_url,
         session=session,
         broadcast_fn=lambda evt: broadcast(req.session_id, evt),
     )
-    
-    response = await agent.chat(req.message)
-    
+
+    response = await agent.chat(safe_message)
+
     session.add_message("assistant", response["content"])
-    
+
     return response
 
 
