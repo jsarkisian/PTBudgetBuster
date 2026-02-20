@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function AutoPanel({ session, pendingApproval, autoHistory = [], onStart, onStop, onApprove }) {
+export default function AutoPanel({ session, pendingApproval, autoHistory = [], currentStatus, onStart, onStop, onApprove }) {
   const [objective, setObjective] = useState('');
   const [maxSteps, setMaxSteps] = useState(10);
   const historyRef = useRef(null);
@@ -95,29 +95,36 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
             </p>
           </div>
         ) : (
-          autoHistory.map((entry, i) =>
-            entry.type === 'status' ? (
-              <StatusEntry key={i} entry={entry} />
-            ) : (
-              <StepEntry
-                key={entry.stepId || i}
-                entry={entry}
-                isPending={pendingApproval?.stepId === entry.stepId}
-                onApprove={onApprove}
-              />
+          autoHistory
+            // Filter out noisy per-step live messages — those show in the status bar below
+            .filter(e => e.type !== 'status' || !e.message?.match(/^Step \d+:/))
+            .map((entry, i) =>
+              entry.type === 'status' ? (
+                <StatusEntry key={i} entry={entry} />
+              ) : (
+                <StepEntry
+                  key={entry.stepId || i}
+                  entry={entry}
+                  isPending={pendingApproval?.stepId === entry.stepId}
+                  onApprove={onApprove}
+                />
+              )
             )
-          )
         )}
 
-        {/* AI working indicator */}
+        {/* Live status — shown while AI is working between approval gates */}
         {isRunning && !pendingApproval && (
-          <div className="flex items-center gap-2 py-2 px-1">
-            <div className="flex gap-1">
-              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          <div className="sticky bottom-0 bg-dark-900/95 border border-dark-600 rounded px-3 py-2">
+            <div className="flex items-center gap-2">
+              <div className="flex gap-0.5 shrink-0">
+                <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span className="text-xs text-gray-300 leading-snug">
+                {currentStatus || 'AI is working…'}
+              </span>
             </div>
-            <span className="text-xs text-gray-500">AI is planning and executing the next step…</span>
           </div>
         )}
       </div>

@@ -35,6 +35,7 @@ export default function App() {
   const [tools, setTools] = useState({});
   const [pendingApproval, setPendingApproval] = useState(null);
   const [autoHistory, setAutoHistory] = useState([]);
+  const [autoCurrentStatus, setAutoCurrentStatus] = useState(null);
   const [showNewSession, setShowNewSession] = useState(false);
   const [editingSession, setEditingSession] = useState(null);
   const [health, setHealth] = useState(null);
@@ -131,7 +132,8 @@ export default function App() {
         ));
         break;
       case 'auto_mode_changed':
-        if (event.enabled) setAutoHistory([]);
+        if (event.enabled) { setAutoHistory([]); setAutoCurrentStatus(null); }
+        else { setAutoCurrentStatus(null); }
         setOutputs(prev => [...prev, {
           id: `auto-${Date.now()}`, type: 'auto_status',
           message: event.enabled ? `Autonomous mode started: ${event.objective || ''}` : 'Autonomous mode stopped',
@@ -144,6 +146,7 @@ export default function App() {
         }]);
         break;
       case 'auto_status':
+        setAutoCurrentStatus(event.message);
         setOutputs(prev => [...prev, {
           id: `auto-${Date.now()}`, type: 'auto_status',
           message: event.message,
@@ -380,7 +383,7 @@ export default function App() {
                   <FindingsPanel findings={findings} />
                 )}
                 {activeTab === 'auto' && activeSession && (
-                  <AutoPanel session={activeSession} pendingApproval={pendingApproval} autoHistory={autoHistory}
+                  <AutoPanel session={activeSession} pendingApproval={pendingApproval} autoHistory={autoHistory} currentStatus={autoCurrentStatus}
                     onStart={async (obj, steps) => { await api.startAutonomous({ session_id: activeSession.id, enabled: true, objective: obj, max_steps: steps }); }}
                     onStop={async () => { await api.stopAutonomous({ session_id: activeSession.id }); }}
                     onApprove={async (stepId, approved) => { await api.approveStep({ session_id: activeSession.id, step_id: stepId, approved }); setPendingApproval(null); }}
