@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { api, isAuthenticated, setToken } from './utils/api';
 import { useWebSocket } from './hooks/useWebSocket';
 import Header from './components/Header';
@@ -43,6 +43,44 @@ export default function App() {
   const chatAbortRef = React.useRef(null);
   const [clients, setClients] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
+
+  // Resizable output pane — persisted across sessions
+  const [outputWidth, setOutputWidth] = useState(() => {
+    const saved = localStorage.getItem('outputPaneWidth');
+    return saved ? parseFloat(saved) : 45;
+  });
+  const splitContainerRef = useRef(null);
+  const dragState = useRef({ dragging: false, startX: 0, startWidth: 0 });
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragState.current.dragging || !splitContainerRef.current) return;
+      const containerWidth = splitContainerRef.current.offsetWidth;
+      const delta = dragState.current.startX - e.clientX; // drag left → wider output
+      const newPct = dragState.current.startWidth + (delta / containerWidth) * 100;
+      const clamped = Math.min(75, Math.max(20, newPct));
+      setOutputWidth(clamped);
+      localStorage.setItem('outputPaneWidth', clamped);
+    };
+    const onUp = () => {
+      dragState.current.dragging = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  const handleDividerMouseDown = (e) => {
+    dragState.current = { dragging: true, startX: e.clientX, startWidth: outputWidth };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  };
 
   // ALL HOOKS MUST BE ABOVE ANY EARLY RETURNS
 
@@ -297,8 +335,8 @@ export default function App() {
               ))}
             </div>
             <PresenceBar users={onlineUsers} />
-            <div className="flex-1 flex overflow-hidden">
-              <div className="flex-1 overflow-hidden">
+            <div className="flex-1 flex overflow-hidden" ref={splitContainerRef}>
+              <div className="overflow-hidden" style={{ flex: '1 1 0', minWidth: 0 }}>
                 {activeTab === 'chat' && activeSession && (
                   <ChatPanel messages={messages} onSend={handleSendChat} loading={chatLoading} session={activeSession} onCancel={handleCancelChat} />
                 )}
@@ -346,9 +384,16 @@ export default function App() {
                 )}
               </div>
               {!['admin','tooladmin','settings','clients','screenshots','files'].includes(activeTab) && (
-                <div className="w-[45%] border-l border-dark-600">
-                  <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
-                </div>
+                <>
+                  <div
+                    onMouseDown={handleDividerMouseDown}
+                    className="w-1 shrink-0 bg-dark-600 hover:bg-accent-blue/60 active:bg-accent-blue cursor-col-resize transition-colors"
+                    title="Drag to resize"
+                  />
+                  <div className="shrink-0 overflow-hidden" style={{ width: `${outputWidth}%` }}>
+                    <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
+                  </div>
+                </>
               )}
             </div>
           </div>
