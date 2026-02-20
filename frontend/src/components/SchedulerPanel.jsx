@@ -22,7 +22,8 @@ export default function SchedulerPanel({ session, tools }) {
   // Form state
   const [tool, setTool] = useState('');
   const [scheduleType, setScheduleType] = useState('once');
-  const [runAt, setRunAt] = useState('');
+  const [runDate, setRunDate] = useState('');
+  const [runTime, setRunTime] = useState('00:00');
   const [cronExpr, setCronExpr] = useState('');
   const [label, setLabel] = useState('');
   const [params, setParams] = useState('{}');
@@ -47,7 +48,7 @@ export default function SchedulerPanel({ session, tools }) {
   const handleCreate = async () => {
     setFormError('');
     if (!tool) { setFormError('Select a tool'); return; }
-    if (scheduleType === 'once' && !runAt) { setFormError('Enter run date/time'); return; }
+    if (scheduleType === 'once' && !runDate) { setFormError('Enter run date/time'); return; }
     if (scheduleType === 'cron' && !cronExpr.trim()) { setFormError('Enter cron expression'); return; }
 
     let parsedParams = {};
@@ -60,18 +61,21 @@ export default function SchedulerPanel({ session, tools }) {
 
     setSubmitting(true);
     try {
+      const runAtISO = scheduleType === 'once'
+        ? new Date(`${runDate}T${runTime || '00:00'}`).toISOString()
+        : undefined;
       const job = await api.createSchedule({
         session_id: session.id,
         tool,
         parameters: parsedParams,
         schedule_type: scheduleType,
-        run_at: scheduleType === 'once' ? new Date(runAt).toISOString() : undefined,
+        run_at: runAtISO,
         cron_expr: scheduleType === 'cron' ? cronExpr.trim() : undefined,
         label: label.trim(),
       });
       setJobs(prev => [...prev, job]);
       setShowForm(false);
-      setTool(''); setLabel(''); setRunAt(''); setCronExpr(''); setParams('{}');
+      setTool(''); setLabel(''); setRunDate(''); setRunTime('00:00'); setCronExpr(''); setParams('{}');
     } catch (e) {
       setFormError(e.message || 'Failed to create schedule');
     } finally {
@@ -152,7 +156,20 @@ export default function SchedulerPanel({ session, tools }) {
           {scheduleType === 'once' ? (
             <div>
               <label className="block text-xs text-gray-400 mb-1">Run At *</label>
-              <input type="datetime-local" value={runAt} onChange={e => setRunAt(e.target.value)} className="input" />
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={runDate}
+                  onChange={e => setRunDate(e.target.value)}
+                  className="input flex-1"
+                />
+                <input
+                  type="time"
+                  value={runTime}
+                  onChange={e => setRunTime(e.target.value)}
+                  className="input w-32"
+                />
+              </div>
             </div>
           ) : (
             <div>
