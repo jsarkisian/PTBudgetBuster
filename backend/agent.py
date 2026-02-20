@@ -551,6 +551,10 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
 
             # ── Inner agentic loop for this step ──────────────────────────────
             while True:
+                # Stop check before every Claude call
+                if not session.auto_mode:
+                    return
+
                 response = await self.client.messages.create(
                     model=self.model,
                     max_tokens=4096,
@@ -558,6 +562,10 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                     tools=self._get_tools_schema(),
                     messages=conversation,
                 )
+
+                # Stop check after Claude responds (in case Stop was clicked while waiting)
+                if not session.auto_mode:
+                    return
 
                 has_tool_use = any(b.type == "tool_use" for b in response.content)
 
@@ -581,6 +589,10 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                     if block.type == "text":
                         assistant_content.append({"type": "text", "text": block.text})
                     elif block.type == "tool_use":
+                        # Stop check before each tool
+                        if not session.auto_mode:
+                            return
+
                         assistant_content.append({
                             "type": "tool_use",
                             "id": block.id,
@@ -606,6 +618,10 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                         await _status(f"Step {step}: Running {tool_label}{detail}…")
 
                         result = await self._execute_tool_call(block.name, block.input)
+
+                        # Stop check after each tool (tools can be long-running)
+                        if not session.auto_mode:
+                            return
 
                         await _status(f"Step {step}: {tool_label} finished — analysing output…")
 
@@ -659,6 +675,31 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
             while not session.auto_pending_approval.get("resolved") and elapsed < timeout:
                 if not session.auto_mode:
                     return
+
+                # Handle any queued user messages during the wait
+                if session.auto_user_messages:
+                    queued = session.auto_user_messages[:]
+                    session.auto_user_messages.clear()
+                    for user_msg in queued:
+                        conversation.append({"role": "user", "content": user_msg})
+                        await _status(f"Responding to your message…")
+                        reply_resp = await self.client.messages.create(
+                            model=self.model,
+                            max_tokens=1024,
+                            system=system,
+                            messages=conversation,
+                            # No tools — pure conversational reply
+                        )
+                        reply_text = "\n".join(
+                            b.text for b in reply_resp.content if b.type == "text"
+                        ).strip()
+                        conversation.append({"role": "assistant", "content": reply_text})
+                        await self.broadcast({
+                            "type": "auto_ai_reply",
+                            "message": reply_text,
+                            "timestamp": _ts(),
+                        })
+
                 await asyncio.sleep(1)
                 elapsed += 1
 
@@ -679,6 +720,13 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                 "timestamp": _ts(),
             })
 
+            # Drain any final messages queued right at approval time
+            extra_context = ""
+            if session.auto_user_messages:
+                queued = session.auto_user_messages[:]
+                session.auto_user_messages.clear()
+                extra_context = " The tester also said: " + " | ".join(queued)
+
             # Tell Claude to continue; its memory is already in `conversation`
             conversation.append({
                 "role": "user",
@@ -686,6 +734,7 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                     f"Step {step} approved. Continue with step {step + 1}. "
                     f"Steps remaining: {session.auto_max_steps - step}. "
                     "Execute the next logical action based on what you've found so far."
+                    + extra_context
                 ),
             })
 

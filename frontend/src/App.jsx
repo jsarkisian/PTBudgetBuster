@@ -156,6 +156,18 @@ export default function App() {
           type: 'status', message: event.message, timestamp: event.timestamp,
         }]);
         break;
+      case 'auto_user_message':
+        setAutoHistory(prev => [...prev, {
+          type: 'user_message', message: event.message,
+          user: event.user, timestamp: event.timestamp,
+        }]);
+        break;
+      case 'auto_ai_reply':
+        setAutoHistory(prev => [...prev, {
+          type: 'ai_reply', message: event.message, timestamp: event.timestamp,
+        }]);
+        setAutoCurrentStatus(null);
+        break;
       case 'presence_update':
         setOnlineUsers(event.users || []);
         break;
@@ -387,6 +399,7 @@ export default function App() {
                     onStart={async (obj, steps) => { await api.startAutonomous({ session_id: activeSession.id, enabled: true, objective: obj, max_steps: steps }); }}
                     onStop={async () => { await api.stopAutonomous({ session_id: activeSession.id }); }}
                     onApprove={async (stepId, approved) => { await api.approveStep({ session_id: activeSession.id, step_id: stepId, approved }); setPendingApproval(null); }}
+                    onSendMessage={async (msg) => { await api.sendAutoMessage({ session_id: activeSession.id, message: msg }); }}
                   />
                 )}
                 {activeTab === 'scheduler' && activeSession && (

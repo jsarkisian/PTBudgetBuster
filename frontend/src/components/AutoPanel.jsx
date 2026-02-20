@@ -1,9 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function AutoPanel({ session, pendingApproval, autoHistory = [], currentStatus, onStart, onStop, onApprove }) {
+export default function AutoPanel({ session, pendingApproval, autoHistory = [], currentStatus, onStart, onStop, onApprove, onSendMessage }) {
   const [objective, setObjective] = useState('');
   const [maxSteps, setMaxSteps] = useState(10);
+  const [chatInput, setChatInput] = useState('');
+  const [sending, setSending] = useState(false);
   const historyRef = useRef(null);
+  const chatInputRef = useRef(null);
   const isRunning = session?.auto_mode;
   const step = session?.auto_current_step || 0;
   const maxS = session?.auto_max_steps || 10;
@@ -19,6 +22,15 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
     if (!objective.trim()) return;
     onStart(objective.trim(), maxSteps);
     setObjective('');
+  };
+
+  const handleSend = async () => {
+    const msg = chatInput.trim();
+    if (!msg || sending) return;
+    setSending(true);
+    setChatInput('');
+    try { await onSendMessage(msg); } finally { setSending(false); }
+    chatInputRef.current?.focus();
   };
 
   return (
@@ -96,37 +108,89 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
           </div>
         ) : (
           autoHistory
-            // Filter out noisy per-step live messages — those show in the status bar below
+            // Filter out noisy per-step live messages — those show in the status bar
             .filter(e => e.type !== 'status' || !e.message?.match(/^Step \d+:/))
-            .map((entry, i) =>
-              entry.type === 'status' ? (
-                <StatusEntry key={i} entry={entry} />
-              ) : (
+            .map((entry, i) => {
+              if (entry.type === 'status') return <StatusEntry key={i} entry={entry} />;
+              if (entry.type === 'user_message') return <UserMessageEntry key={i} entry={entry} />;
+              if (entry.type === 'ai_reply') return <AiReplyEntry key={i} entry={entry} />;
+              return (
                 <StepEntry
                   key={entry.stepId || i}
                   entry={entry}
                   isPending={pendingApproval?.stepId === entry.stepId}
                   onApprove={onApprove}
                 />
-              )
-            )
+              );
+            })
         )}
 
-        {/* Live status — shown while AI is working between approval gates */}
-        {isRunning && !pendingApproval && (
-          <div className="sticky bottom-0 bg-dark-900/95 border border-dark-600 rounded px-3 py-2">
-            <div className="flex items-center gap-2">
-              <div className="flex gap-0.5 shrink-0">
-                <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-              <span className="text-xs text-gray-300 leading-snug">
-                {currentStatus || 'AI is working…'}
-              </span>
+      </div>
+
+      {/* Live status bar — only when AI is working (not waiting for approval or reply) */}
+      {isRunning && !pendingApproval && currentStatus && (
+        <div className="shrink-0 border-t border-dark-600 bg-dark-900/80 px-3 py-1.5">
+          <div className="flex items-center gap-2">
+            <div className="flex gap-0.5 shrink-0">
+              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
+            <span className="text-xs text-gray-400 leading-snug truncate">{currentStatus}</span>
           </div>
-        )}
+        </div>
+      )}
+
+      {/* Chat input — always visible while running */}
+      {isRunning && (
+        <div className="shrink-0 border-t border-dark-600 bg-dark-900 p-3">
+          <div className="flex gap-2 items-end">
+            <textarea
+              ref={chatInputRef}
+              value={chatInput}
+              onChange={e => setChatInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              placeholder="Chat with the AI… redirect it, ask questions, or adjust focus (Enter to send)"
+              className="input text-xs flex-1 resize-none min-h-[36px] max-h-[100px]"
+              rows={1}
+              disabled={sending}
+            />
+            <button
+              onClick={handleSend}
+              disabled={!chatInput.trim() || sending}
+              className="btn-primary text-xs px-3 py-1.5 shrink-0"
+            >
+              {sending ? '…' : 'Send'}
+            </button>
+          </div>
+          <p className="text-xs text-gray-600 mt-1">
+            Messages are queued and the AI will respond {pendingApproval ? 'now (it\'s waiting)' : 'after its current action finishes'}.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserMessageEntry({ entry }) {
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[85%] bg-accent-blue/20 border border-accent-blue/30 rounded-lg px-3 py-2">
+        <div className="text-xs text-accent-blue font-medium mb-0.5">
+          {entry.user || 'You'}
+        </div>
+        <div className="text-xs text-gray-200 whitespace-pre-wrap">{entry.message}</div>
+      </div>
+    </div>
+  );
+}
+
+function AiReplyEntry({ entry }) {
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[90%] bg-dark-700 border border-dark-600 rounded-lg px-3 py-2">
+        <div className="text-xs text-accent-cyan font-medium mb-0.5">AI</div>
+        <div className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">{entry.message}</div>
       </div>
     </div>
   );

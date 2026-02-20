@@ -34,6 +34,7 @@ class Session:
         self.auto_max_steps: int = 10
         self.auto_current_step: int = 0
         self.auto_pending_approval: Optional[dict] = None
+        self.auto_user_messages: list[str] = []  # messages queued from the chat input
 
         # Credential token store (in-memory only, never persisted)
         self._token_store: dict[str, str] = {}

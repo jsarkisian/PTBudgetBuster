@@ -175,6 +175,10 @@ class ApprovalResponse(BaseModel):
     approved: bool
     step_id: str
 
+class AutoMessageRequest(BaseModel):
+    session_id: str
+    message: str
+
 
 # ──────────────────────────────────────────────
 #  Broadcast helpers
@@ -662,6 +666,25 @@ async def approve_step(req: ApprovalResponse):
         return {"status": "approved" if req.approved else "rejected"}
     
     raise HTTPException(404, "No pending approval found")
+
+@app.post("/api/autonomous/message")
+async def send_auto_message(req: AutoMessageRequest, current_user=Depends(get_current_user)):
+    """Inject a user message into the running autonomous session."""
+    session = session_mgr.get(req.session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if not session.auto_mode:
+        raise HTTPException(400, "Autonomous mode is not running")
+    session.auto_user_messages.append(req.message)
+    # Immediately echo it as an event so other connected clients see it
+    await broadcast(req.session_id, {
+        "type": "auto_user_message",
+        "message": req.message,
+        "user": current_user.username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"status": "queued"}
+
 
 @app.post("/api/autonomous/stop")
 async def stop_autonomous(req: dict):

@@ -73,6 +73,7 @@ export const api = {
   startAutonomous: (data) => request('/autonomous/start', { method: 'POST', body: JSON.stringify(data) }),
   stopAutonomous: (data) => request('/autonomous/stop', { method: 'POST', body: JSON.stringify(data) }),
   approveStep: (data) => request('/autonomous/approve', { method: 'POST', body: JSON.stringify(data) }),
+  sendAutoMessage: (data) => request('/autonomous/message', { method: 'POST', body: JSON.stringify(data) }),
 
   // Files
   listFiles: (dir = '') => request(`/files?directory=${encodeURIComponent(dir)}`),
