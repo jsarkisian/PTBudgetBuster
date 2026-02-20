@@ -156,6 +156,15 @@ CURRENT FINDINGS:
             self._token_counter += 1
             return f"[[_CRED_{self._token_counter}_]]"
 
+        # Explicit user marking: [[sensitive_value]] -> token
+        def replace_explicit(m: re.Match) -> str:
+            value = m.group(1)
+            token = next_token()
+            self._token_store[token] = value
+            return token
+
+        text = re.sub(r'\[\[(?!_CRED_\d+_\]\])([^\[\]]+)\]\]', replace_explicit, text)
+
         # key=value or key: value credential patterns
         def replace_kv(m: re.Match) -> str:
             key, value = m.group(1), m.group(2)

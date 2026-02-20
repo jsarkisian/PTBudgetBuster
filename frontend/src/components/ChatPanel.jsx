@@ -72,6 +72,12 @@ export default function ChatPanel({ messages, onSend, loading, session, onCancel
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="p-3 border-t border-dark-600 bg-dark-900">
+        <div className="flex gap-2 mb-1.5">
+          <span className="text-xs text-gray-500">
+            Wrap sensitive values to keep them from Claude:{' '}
+            <code className="bg-dark-700 text-accent-cyan px-1 rounded">[[password123]]</code>
+          </span>
+        </div>
         <div className="flex gap-2">
           <input
             type="text"
