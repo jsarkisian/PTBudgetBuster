@@ -147,7 +147,7 @@ class CreateSessionRequest(BaseModel):
     name: str
     target_scope: list[str] = []
     notes: str = ""
-    client_id: str = None
+    client_id: Optional[str] = None
 
 class ChatMessage(BaseModel):
     message: str
@@ -240,9 +240,9 @@ async def get_session(session_id: str):
     return session.to_dict()
 
 class UpdateSessionRequest(BaseModel):
-    name: str = None
-    target_scope: list[str] = None
-    notes: str = None
+    name: Optional[str] = None
+    target_scope: Optional[list[str]] = None
+    notes: Optional[str] = None
 
 @app.put("/api/sessions/{session_id}")
 async def update_session(session_id: str, req: UpdateSessionRequest):
@@ -301,9 +301,9 @@ class CreateClientRequest(BaseModel):
     notes: str = ""
 
 class UpdateClientRequest(BaseModel):
-    name: str = None
-    contacts: list = None
-    notes: str = None
+    name: Optional[str] = None
+    contacts: Optional[list] = None
+    notes: Optional[str] = None
 
 class AddAssetRequest(BaseModel):
     value: str
@@ -905,10 +905,10 @@ class CreateUserRequest(BaseModel):
     email: str = ""
 
 class UpdateUserRequest(BaseModel):
-    display_name: str = None
-    email: str = None
-    role: str = None
-    enabled: bool = None
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+    enabled: Optional[bool] = None
 
 class ResetPasswordRequest(BaseModel):
     new_password: str
@@ -1048,8 +1048,8 @@ class CreateScheduleRequest(BaseModel):
     tool: str
     parameters: dict = {}
     schedule_type: str  # once | cron
-    run_at: str = None
-    cron_expr: str = None
+    run_at: Optional[str] = None
+    cron_expr: Optional[str] = None
     label: str = ""
 
 
