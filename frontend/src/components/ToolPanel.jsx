@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function ToolPanel({ tools, onExecute, onBash, loading }) {
+export default function ToolPanel({ tools, onExecute, onBash, loading, session }) {
   const [selectedTool, setSelectedTool] = useState('');
   const [rawArgs, setRawArgs] = useState('');
   const [bashCmd, setBashCmd] = useState('');
@@ -112,6 +112,7 @@ export default function ToolPanel({ tools, onExecute, onBash, loading }) {
                     />
                   </div>
                   <ParamHints toolDef={toolDef} />
+                  <ScopeHint rawArgs={rawArgs} session={session} />
                 </div>
               </div>
             )}
@@ -181,5 +182,15 @@ function ParamHints({ toolDef }) {
         </div>
       )}
     </div>
+  );
+}
+
+function ScopeHint({ rawArgs, session }) {
+  const scope = session?.target_scope;
+  if (rawArgs.trim() || !scope?.length) return null;
+  return (
+    <p className="mt-1 text-xs text-accent-blue/70">
+      No args — will target engagement scope: <span className="font-mono">{scope.join(', ')}</span>
+    </p>
   );
 }

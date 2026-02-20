@@ -66,6 +66,34 @@ class TaskInfo(BaseModel):
     return_code: Optional[int] = None
 
 
+_TARGET_PARAM_NAMES = {"domain", "target", "host", "url", "site", "query", "hostname", "ip"}
+
+
+def _find_primary_target(tool_def: dict):
+    """Return (flag, is_positional) for the tool's primary target parameter."""
+    params = tool_def.get("parameters", {})
+    # 1. Required, target-named, flag-based (not positional/stdin)
+    for name, pdef in params.items():
+        if (name.lower() in _TARGET_PARAM_NAMES
+                and pdef.get("required")
+                and pdef.get("flag")
+                and not pdef.get("positional")
+                and not pdef.get("stdin")):
+            return pdef["flag"], False
+    # 2. Required positional (non-stdin)
+    for name, pdef in params.items():
+        if pdef.get("required") and pdef.get("positional") and not pdef.get("stdin"):
+            return None, True
+    # 3. Any target-named parameter with a flag
+    for name, pdef in params.items():
+        if (name.lower() in _TARGET_PARAM_NAMES
+                and pdef.get("flag")
+                and not pdef.get("positional")
+                and not pdef.get("stdin")):
+            return pdef["flag"], False
+    return None, False
+
+
 def build_command(tool_name: str, parameters: dict) -> list:
     """Build command from tool definition and parameters."""
     tool_def = TOOL_DEFS[tool_name]
@@ -75,6 +103,19 @@ def build_command(tool_name: str, parameters: dict) -> list:
     raw_args = parameters.get("__raw_args__", "").strip()
     if raw_args:
         return [binary] + shlex.split(raw_args)
+
+    # Scope-default mode: no explicit args, use engagement scope as target
+    scope = [s for s in parameters.get("__scope__", []) if s]
+    if scope:
+        target_flag, is_positional = _find_primary_target(tool_def)
+        if is_positional or target_flag:
+            cmd_parts = [binary] + tool_def.get("default_args", [])
+            if is_positional:
+                cmd_parts.extend(scope)           # nmap target1 target2 ...
+            else:
+                for s in scope:
+                    cmd_parts.extend([target_flag, s])   # -d target1 -d target2 ...
+            return cmd_parts
 
     cmd_parts = [binary] + tool_def.get("default_args", [])
     

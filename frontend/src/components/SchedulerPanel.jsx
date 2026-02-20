@@ -166,6 +166,11 @@ export default function SchedulerPanel({ session, tools }) {
                 />
               </div>
               {toolDef && <FlagHints toolDef={toolDef} />}
+              {!rawArgs.trim() && session?.target_scope?.length > 0 && (
+                <p className="mt-1 text-xs text-accent-blue/70">
+                  No args — will target engagement scope: <span className="font-mono">{session.target_scope.join(', ')}</span>
+                </p>
+              )}
             </div>
           )}
 
@@ -225,6 +230,7 @@ export default function SchedulerPanel({ session, tools }) {
                   <EditJobForm
                     job={job}
                     tools={tools}
+                    session={session}
                     onSave={handleSaveEdit}
                     onCancel={() => setEditingId(null)}
                   />
@@ -303,7 +309,7 @@ export default function SchedulerPanel({ session, tools }) {
 // ─────────────────────────────────────────────────────────────
 //  Inline edit form
 // ─────────────────────────────────────────────────────────────
-function EditJobForm({ job, tools, onSave, onCancel }) {
+function EditJobForm({ job, tools, session, onSave, onCancel }) {
   const [tool, setTool] = useState(job.tool);
   const [rawArgs, setRawArgs] = useState(job.parameters?.__raw_args__ || '');
   const [label, setLabel] = useState(job.label || '');
@@ -385,6 +391,11 @@ function EditJobForm({ job, tools, onSave, onCancel }) {
           />
         </div>
         {toolDef && <FlagHints toolDef={toolDef} />}
+        {!rawArgs.trim() && session?.target_scope?.length > 0 && (
+          <p className="mt-1 text-xs text-accent-blue/70">
+            No args — will target engagement scope: <span className="font-mono">{session.target_scope.join(', ')}</span>
+          </p>
+        )}
       </div>
 
       <div>

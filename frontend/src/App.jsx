@@ -341,7 +341,7 @@ export default function App() {
                   <ChatPanel messages={messages} onSend={handleSendChat} loading={chatLoading} session={activeSession} onCancel={handleCancelChat} />
                 )}
                 {activeTab === 'tools' && activeSession && (
-                  <ToolPanel tools={tools} onExecute={handleExecuteTool} onBash={handleExecuteBash} loading={toolLoading} />
+                  <ToolPanel tools={tools} onExecute={handleExecuteTool} onBash={handleExecuteBash} loading={toolLoading} session={activeSession} />
                 )}
                 {activeTab === 'findings' && activeSession && (
                   <FindingsPanel findings={findings} />

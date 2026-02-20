@@ -448,10 +448,15 @@ async def execute_tool(req: ToolExecRequest, current_user=Depends(get_optional_u
     task_id = str(uuid.uuid4())[:8]
     username = current_user.username if current_user else None
 
+    # If no explicit args provided, inject engagement scope as default target
+    params = dict(req.parameters)
+    if not params.get("__raw_args__", "").strip() and session.target_scope:
+        params["__scope__"] = session.target_scope
+
     # Log to session
     session.add_event("tool_exec", {
         "tool": req.tool,
-        "parameters": req.parameters,
+        "parameters": params,
         "task_id": task_id,
     }, user=username)
 
@@ -459,16 +464,16 @@ async def execute_tool(req: ToolExecRequest, current_user=Depends(get_optional_u
         "type": "tool_start",
         "tool": req.tool,
         "task_id": task_id,
-        "parameters": req.parameters,
+        "parameters": params,
         "user": username,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
-    
+
     # Launch async - don't block
     async with get_toolbox_client() as client:
         resp = await client.post("/execute", json={
             "tool": req.tool,
-            "parameters": req.parameters,
+            "parameters": params,
             "task_id": task_id,
             "timeout": req.timeout,
         })
@@ -1084,9 +1089,15 @@ async def _execute_scheduled_job(job_id: str):
     schedule_mgr.update_status(job_id, "running", last_run=now)
 
     task_id = str(uuid.uuid4())[:8]
+
+    # If no explicit args, inject engagement scope as default target
+    params = dict(job.parameters)
+    if not params.get("__raw_args__", "").strip() and session.target_scope:
+        params["__scope__"] = session.target_scope
+
     session.add_event("tool_exec", {
         "tool": job.tool,
-        "parameters": job.parameters,
+        "parameters": params,
         "task_id": task_id,
         "source": "scheduler",
         "job_id": job_id,
@@ -1096,7 +1107,7 @@ async def _execute_scheduled_job(job_id: str):
         "type": "tool_start",
         "tool": job.tool,
         "task_id": task_id,
-        "parameters": job.parameters,
+        "parameters": params,
         "source": "scheduler",
         "timestamp": now,
     })
@@ -1105,7 +1116,7 @@ async def _execute_scheduled_job(job_id: str):
         async with get_toolbox_client() as client:
             await client.post("/execute", json={
                 "tool": job.tool,
-                "parameters": job.parameters,
+                "parameters": params,
                 "task_id": task_id,
                 "timeout": 300,
             })
