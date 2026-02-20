@@ -67,7 +67,8 @@ export default function AdminPanel({ currentUser, logoUrl, onLogoChange }) {
 
       <div className="flex-1 flex overflow-hidden">
         {/* User list */}
-        <div className="w-64 border-r border-dark-600 overflow-y-auto">
+        <div className="w-64 border-r border-dark-600 flex flex-col">
+          <div className="flex-1 overflow-y-auto">
           {users.map(user => (
             <div
               key={user.id}
@@ -99,6 +100,8 @@ export default function AdminPanel({ currentUser, logoUrl, onLogoChange }) {
               </div>
             </div>
           ))}
+          </div>
+          <BrandingSection logoUrl={logoUrl} onLogoChange={onLogoChange} onFlash={flash} onError={setError} />
         </div>
 
         {/* User detail */}
@@ -128,7 +131,6 @@ export default function AdminPanel({ currentUser, logoUrl, onLogoChange }) {
         />
       )}
 
-      <BrandingSection logoUrl={logoUrl} onLogoChange={onLogoChange} onFlash={flash} onError={setError} />
     </div>
   );
 }
