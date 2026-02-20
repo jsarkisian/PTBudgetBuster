@@ -256,7 +256,7 @@ class UserManager:
         return True
 
     def get_user(self, username: str) -> Optional[User]:
-        return self.users.get(username)
+        return self.users.get(username.lower())
 
     def list_users(self) -> list[User]:
         return list(self.users.values())
