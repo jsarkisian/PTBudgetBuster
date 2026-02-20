@@ -1,10 +1,11 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { Lightbox, ScreenshotThumb, buildImageUrl, extractImagePaths } from './ImageUtils';
 
 export default function OutputPanel({ outputs, onClear }) {
   const scrollRef = useRef(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [filter, setFilter] = useState('all');
-  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [lightbox, setLightbox] = useState(null); // {src, filename}
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -32,6 +33,7 @@ export default function OutputPanel({ outputs, onClear }) {
             <option value="all">All</option>
             <option value="manual">Manual</option>
             <option value="ai_agent">AI Agent</option>
+            <option value="scheduler">Scheduler</option>
           </select>
           <label className="flex items-center gap-1 text-xs text-gray-400">
             <input
@@ -58,99 +60,19 @@ export default function OutputPanel({ outputs, onClear }) {
             <OutputEntry
               key={`${entry.id}-${i}`}
               entry={entry}
-              onImageClick={setLightboxSrc}
+              onImageClick={(src, filename) => setLightbox({ src, filename })}
             />
           ))
         )}
       </div>
 
-      {/* Lightbox */}
-      {lightboxSrc && (
-        <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      {lightbox && (
+        <Lightbox src={lightbox.src} filename={lightbox.filename} onClose={() => setLightbox(null)} />
       )}
     </div>
   );
 }
 
-function Lightbox({ src, onClose }) {
-  useEffect(() => {
-    const handleKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 cursor-pointer"
-      onClick={onClose}
-    >
-      <div className="relative max-w-[90vw] max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        <button
-          onClick={onClose}
-          className="absolute -top-3 -right-3 w-8 h-8 bg-dark-700 hover:bg-dark-600 rounded-full flex items-center justify-center text-gray-300 text-lg border border-dark-500 z-10"
-        >
-          ×
-        </button>
-        <img
-          src={src}
-          alt="Screenshot"
-          className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg border border-dark-600 shadow-2xl"
-        />
-        <div className="mt-2 flex justify-center">
-          <a
-            href={src}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-ghost text-xs px-3 py-1"
-          >
-            Open in new tab ↗
-          </a>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Patterns that indicate screenshot file paths in tool output
-// Matches paths like: /opt/pentest/data/screenshots/https---domain.com.jpeg
-// Or: /opt/pentest/output/screenshot/subdomain.domain.com/hash.png
-// Or: screenshots/filename.jpeg
-// Or any path ending in an image extension
-const IMAGE_PATH_REGEX = /(?:\/opt\/pentest\/[^\s"']+\.(?:png|jpg|jpeg|gif|webp|bmp))/gi;
-const REL_SCREENSHOT_REGEX = /(?:(?:screenshots?|output\/screenshot)\/[^\s"']+\.(?:png|jpg|jpeg|gif|webp|bmp))/gi;
-const GENERIC_IMG_PATH_REGEX = /(?:\/[\w./_-]+\.(?:png|jpg|jpeg|gif|webp|bmp))/gi;
-
-function extractImagePaths(text) {
-  if (!text) return [];
-  const paths = new Set();
-
-  // Match /opt/pentest/... paths (most specific)
-  const optMatches = text.match(IMAGE_PATH_REGEX) || [];
-  optMatches.forEach(p => paths.add(p));
-
-  // Match relative screenshot paths
-  const relMatches = text.match(REL_SCREENSHOT_REGEX) || [];
-  relMatches.forEach(p => paths.add(p));
-
-  // Match any absolute path to an image
-  const genericMatches = text.match(GENERIC_IMG_PATH_REGEX) || [];
-  genericMatches.forEach(p => {
-    // Skip very short paths that are likely false positives
-    if (p.length > 8) paths.add(p);
-  });
-
-  return [...paths];
-}
-
-function buildImageUrl(path) {
-  // Strip /opt/pentest/ prefix if present, since the proxy searches relative to /opt/pentest/
-  let cleanPath = path;
-  if (cleanPath.startsWith('/opt/pentest/')) {
-    cleanPath = cleanPath.replace('/opt/pentest/', '');
-  }
-  // Don't double-encode slashes
-  return `/api/images/${cleanPath}`;
-}
 
 function OutputEntry({ entry, onImageClick }) {
   const [expanded, setExpanded] = useState(true);
@@ -171,6 +93,9 @@ function OutputEntry({ entry, onImageClick }) {
           <span className="font-mono text-accent-cyan font-medium">{entry.tool}</span>
           {entry.source === 'ai_agent' && (
             <span className="text-[10px] bg-accent-purple/20 text-accent-purple px-1.5 rounded">AI</span>
+          )}
+          {entry.source === 'scheduler' && (
+            <span className="text-[10px] bg-accent-yellow/20 text-accent-yellow px-1.5 rounded">SCHED</span>
           )}
           <span className="text-gray-500 ml-auto">
             {new Date(entry.timestamp).toLocaleTimeString()}
@@ -240,6 +165,9 @@ function OutputEntry({ entry, onImageClick }) {
           {entry.source === 'ai_agent' && (
             <span className="text-[10px] bg-accent-purple/20 text-accent-purple px-1.5 rounded">AI</span>
           )}
+          {entry.source === 'scheduler' && (
+            <span className="text-[10px] bg-accent-yellow/20 text-accent-yellow px-1.5 rounded">SCHED</span>
+          )}
           <span className={`text-[10px] ${isSuccess ? 'text-accent-green' : 'text-accent-red'}`}>
             {result.status}
           </span>
@@ -290,51 +218,3 @@ function OutputEntry({ entry, onImageClick }) {
   return null;
 }
 
-function ScreenshotThumb({ path, onClick }) {
-  const [loaded, setLoaded] = useState(false);
-  const [errored, setErrored] = useState(false);
-
-  const imageUrl = buildImageUrl(path);
-
-  if (errored) {
-    return (
-      <div className="w-36 h-24 bg-dark-700 border border-dark-500 rounded flex items-center justify-center text-xs text-gray-500">
-        <div className="text-center px-1">
-          <div>📸</div>
-          <div className="truncate max-w-[130px]" title={path}>
-            {path.split('/').pop()}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="relative cursor-pointer group"
-      onClick={() => onClick(imageUrl)}
-    >
-      <div className={`w-36 h-24 bg-dark-700 border border-dark-500 rounded overflow-hidden ${
-        !loaded ? 'animate-pulse' : ''
-      }`}>
-        <img
-          src={imageUrl}
-          alt={path.split('/').pop()}
-          className={`w-full h-full object-cover transition-opacity ${loaded ? 'opacity-100' : 'opacity-0'}`}
-          onLoad={() => setLoaded(true)}
-          onError={() => setErrored(true)}
-        />
-      </div>
-      {/* Hover overlay */}
-      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
-        <span className="text-white text-xs font-medium">🔍 View</span>
-      </div>
-      {/* Filename */}
-      <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1 py-0.5 rounded-b">
-        <span className="text-[9px] text-gray-300 truncate block" title={path}>
-          {path.split('/').pop()}
-        </span>
-      </div>
-    </div>
-  );
-}

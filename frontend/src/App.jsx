@@ -15,6 +15,12 @@ import NewSessionModal from './components/NewSessionModal';
 import EditSessionModal from './components/EditSessionModal';
 import LoginScreen from './components/LoginScreen';
 import HomePage from './components/HomePage';
+import ClientsPanel from './components/ClientsPanel';
+import ScreenshotGallery from './components/ScreenshotGallery';
+import FileManager from './components/FileManager';
+import SchedulerPanel from './components/SchedulerPanel';
+import PresenceBar from './components/PresenceBar';
+import ActivityLogPanel from './components/ActivityLogPanel';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -35,6 +41,8 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
   const chatAbortRef = React.useRef(null);
+  const [clients, setClients] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState([]);
 
   // ALL HOOKS MUST BE ABOVE ANY EARLY RETURNS
 
@@ -74,6 +82,9 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
+      case 'presence_update':
+        setOnlineUsers(event.users || []);
+        break;
     }
   }, []);
 
@@ -108,6 +119,7 @@ export default function App() {
     }).catch(() => {});
     api.listTools().then(data => setTools(data.tools || {})).catch(() => {});
     api.getLogo().then(data => setLogoUrl(data.logo || null)).catch(() => {});
+    api.listClients().then(setClients).catch(() => {});
   }, [currentUser]);
 
   // Load session details when active session changes
@@ -247,6 +259,11 @@ export default function App() {
     { id: 'tools', label: 'Tools' },
     { id: 'findings', label: `Findings (${findings.length})` },
     { id: 'auto', label: 'Autonomous' },
+    { id: 'scheduler', label: 'Scheduler' },
+    { id: 'activitylog', label: 'Activity Log' },
+    { id: 'clients', label: 'Clients' },
+    { id: 'screenshots', label: 'Screenshots' },
+    { id: 'files', label: 'Files' },
     { id: 'admin', label: currentUser.role === 'admin' ? 'Users' : 'Account' },
     { id: 'tooladmin', label: 'Tool Mgmt' },
     ...(currentUser.role === 'admin' ? [{ id: 'settings', label: 'Settings' }] : []),
@@ -262,9 +279,9 @@ export default function App() {
           onNew={() => setShowNewSession(true)}
           onEdit={(session) => setEditingSession(session)}
         />
-        {activeSession || activeTab === 'admin' || activeTab === 'tooladmin' || activeTab === 'settings' ? (
+        {activeSession || activeTab === 'admin' || activeTab === 'tooladmin' || activeTab === 'settings' || activeTab === 'clients' || activeTab === 'screenshots' || activeTab === 'files' ? (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex border-b border-dark-600 bg-dark-900">
+            <div className="flex border-b border-dark-600 bg-dark-900 overflow-x-auto">
               {tabs.map(tab => (
                 <button
                   key={tab.id}
@@ -279,6 +296,7 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <PresenceBar users={onlineUsers} />
             <div className="flex-1 flex overflow-hidden">
               <div className="flex-1 overflow-hidden">
                 {activeTab === 'chat' && activeSession && (
@@ -297,6 +315,21 @@ export default function App() {
                     onApprove={async (stepId, approved) => { await api.approveStep({ session_id: activeSession.id, step_id: stepId, approved }); setPendingApproval(null); }}
                   />
                 )}
+                {activeTab === 'scheduler' && activeSession && (
+                  <SchedulerPanel session={activeSession} tools={tools} />
+                )}
+                {activeTab === 'activitylog' && activeSession && (
+                  <ActivityLogPanel session={activeSession} />
+                )}
+                {activeTab === 'clients' && (
+                  <ClientsPanel onClientsChange={setClients} />
+                )}
+                {activeTab === 'screenshots' && (
+                  <ScreenshotGallery />
+                )}
+                {activeTab === 'files' && (
+                  <FileManager />
+                )}
                 {activeTab === 'admin' && (
                   <AdminPanel currentUser={currentUser} />
                 )}
@@ -306,13 +339,13 @@ export default function App() {
                 {activeTab === 'settings' && (
                   <SettingsPanel logoUrl={logoUrl} onLogoChange={setLogoUrl} />
                 )}
-                {!activeSession && activeTab !== 'admin' && activeTab !== 'tooladmin' && activeTab !== 'settings' && (
+                {!activeSession && !['admin','tooladmin','settings','clients','screenshots','files'].includes(activeTab) && (
                   <div className="flex-1 flex items-center justify-center text-gray-500 h-full">
                     <p className="text-sm">Select an engagement to view this tab</p>
                   </div>
                 )}
               </div>
-              {activeTab !== 'admin' && activeTab !== 'tooladmin' && activeTab !== 'settings' && (
+              {!['admin','tooladmin','settings','clients','screenshots','files'].includes(activeTab) && (
                 <div className="w-[45%] border-l border-dark-600">
                   <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
                 </div>
@@ -332,7 +365,7 @@ export default function App() {
         )}
       </div>
       {showNewSession && (
-        <NewSessionModal onClose={() => setShowNewSession(false)} onCreate={handleCreateSession} />
+        <NewSessionModal onClose={() => setShowNewSession(false)} onCreate={handleCreateSession} clients={clients} />
       )}
       {editingSession && (
         <EditSessionModal session={editingSession} onClose={() => setEditingSession(null)} onSave={handleEditSession} />

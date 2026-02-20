@@ -17,11 +17,12 @@ DATA_DIR = Path(os.environ.get("SESSION_DATA_DIR", "/opt/pentest/data/sessions")
 
 
 class Session:
-    def __init__(self, name: str, target_scope: list[str], notes: str = "", id: str = None):
+    def __init__(self, name: str, target_scope: list[str], notes: str = "", id: str = None, client_id: str = None):
         self.id = id or str(uuid.uuid4())[:12]
         self.name = name
         self.target_scope = target_scope
         self.notes = notes
+        self.client_id = client_id
         self.created_at = datetime.utcnow().isoformat()
         self.messages: list[dict] = []
         self.events: list[dict] = []
@@ -38,20 +39,26 @@ class Session:
         self._token_store: dict[str, str] = {}
         self._token_counter: int = 0
     
-    def add_message(self, role: str, content: str):
-        self.messages.append({
+    def add_message(self, role: str, content: str, user: str = None):
+        entry = {
             "role": role,
             "content": content,
             "timestamp": datetime.utcnow().isoformat(),
-        })
+        }
+        if user is not None:
+            entry["user"] = user
+        self.messages.append(entry)
         self._save()
-    
-    def add_event(self, event_type: str, data: dict):
-        self.events.append({
+
+    def add_event(self, event_type: str, data: dict, user: str = None):
+        entry = {
             "type": event_type,
             "data": data,
             "timestamp": datetime.utcnow().isoformat(),
-        })
+        }
+        if user is not None:
+            entry["user"] = user
+        self.events.append(entry)
         self._save()
     
     def add_finding(self, severity: str, title: str, description: str, evidence: str = ""):
@@ -110,6 +117,7 @@ CURRENT FINDINGS:
             "name": self.name,
             "target_scope": self.target_scope,
             "notes": self.notes,
+            "client_id": self.client_id,
             "created_at": self.created_at,
             "message_count": len(self.messages),
             "event_count": len(self.events),
@@ -128,6 +136,7 @@ CURRENT FINDINGS:
             "name": self.name,
             "target_scope": self.target_scope,
             "notes": self.notes,
+            "client_id": self.client_id,
             "created_at": self.created_at,
             "messages": self.messages,
             "events": self.events,
@@ -142,6 +151,7 @@ CURRENT FINDINGS:
             target_scope=data.get("target_scope", []),
             notes=data.get("notes", ""),
             id=data["id"],
+            client_id=data.get("client_id"),
         )
         session.created_at = data.get("created_at", session.created_at)
         session.messages = data.get("messages", [])
@@ -271,8 +281,8 @@ class SessionManager:
         if loaded:
             print(f"[INFO] Loaded {loaded} session(s) from disk")
     
-    def create(self, name: str, target_scope: list[str], notes: str = "") -> Session:
-        session = Session(name, target_scope, notes)
+    def create(self, name: str, target_scope: list[str], notes: str = "", client_id: str = None) -> Session:
+        session = Session(name, target_scope, notes, client_id=client_id)
         self.sessions[session.id] = session
         session._save()
         return session

@@ -9,22 +9,28 @@ import json
 import os
 import uuid
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
 import anthropic
 import httpx
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request, Body
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Request, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 from jose import jwt, JWTError
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 from agent import PentestAgent
 from session_manager import SessionManager, Session
 from user_manager import UserManager
+from client_manager import ClientManager
+from schedule_manager import ScheduleManager
 
 class Settings(BaseSettings):
     anthropic_api_key: str = ""
@@ -39,7 +45,20 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-app = FastAPI(title="Pentest MCP Backend", version="1.0.0")
+# APScheduler instance (started in lifespan)
+scheduler = AsyncIOScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and teardown."""
+    scheduler.start()
+    _restore_schedules()
+    yield
+    scheduler.shutdown(wait=False)
+
+
+app = FastAPI(title="Pentest MCP Backend", version="1.0.0", lifespan=lifespan)
 
 origins = [o.strip() for o in settings.allowed_origins.split(",")]
 app.add_middleware(
@@ -53,10 +72,12 @@ app.add_middleware(
 # Core services
 session_mgr = SessionManager()
 user_mgr = UserManager()
+client_mgr = ClientManager()
+schedule_mgr = ScheduleManager()
 toolbox_url = f"http://{settings.toolbox_host}:{settings.toolbox_port}"
 
-# Connected WebSocket clients per session
-ws_clients: dict[str, list[WebSocket]] = {}
+# WebSocket presence per session: {session_id: [{ws, username, joined_at}]}
+ws_presence: dict[str, list[dict]] = {}
 
 security = HTTPBearer(auto_error=False)
 
@@ -87,6 +108,23 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(401, "Invalid or expired token")
 
 
+async def get_optional_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Like get_current_user but returns None instead of raising 401."""
+    if not credentials:
+        return None
+    try:
+        payload = jwt.decode(credentials.credentials, settings.jwt_secret, algorithms=["HS256"])
+        username = payload.get("sub")
+        if not username:
+            return None
+        user = user_mgr.get_user(username)
+        if not user or not user.enabled:
+            return None
+        return user
+    except JWTError:
+        return None
+
+
 async def require_admin(user=Depends(get_current_user)):
     if user.role != "admin":
         raise HTTPException(403, "Admin access required")
@@ -109,6 +147,7 @@ class CreateSessionRequest(BaseModel):
     name: str
     target_scope: list[str] = []
     notes: str = ""
+    client_id: str = None
 
 class ChatMessage(BaseModel):
     message: str
@@ -143,15 +182,30 @@ class ApprovalResponse(BaseModel):
 
 async def broadcast(session_id: str, event: dict):
     """Send event to all WebSocket clients for a session."""
-    if session_id in ws_clients:
+    if session_id in ws_presence:
         dead = []
-        for ws in ws_clients[session_id]:
+        for entry in ws_presence[session_id]:
             try:
-                await ws.send_json(event)
+                await entry["ws"].send_json(event)
             except Exception:
-                dead.append(ws)
-        for ws in dead:
-            ws_clients[session_id].remove(ws)
+                dead.append(entry)
+        for entry in dead:
+            ws_presence[session_id].remove(entry)
+
+
+async def broadcast_presence(session_id: str):
+    """Broadcast current online users for a session."""
+    users = []
+    if session_id in ws_presence:
+        users = [
+            {"username": e["username"], "joined_at": e["joined_at"]}
+            for e in ws_presence[session_id]
+        ]
+    await broadcast(session_id, {
+        "type": "presence_update",
+        "users": users,
+        "timestamp": datetime.utcnow().isoformat(),
+    })
 
 
 # ──────────────────────────────────────────────
@@ -160,12 +214,23 @@ async def broadcast(session_id: str, event: dict):
 
 @app.post("/api/sessions")
 async def create_session(req: CreateSessionRequest):
-    session = session_mgr.create(req.name, req.target_scope, req.notes)
-    return session.to_dict()
+    session = session_mgr.create(req.name, req.target_scope, req.notes, client_id=req.client_id)
+    d = session.to_dict()
+    if req.client_id:
+        c = client_mgr.get(req.client_id)
+        d["client_name"] = c.name if c else None
+    return d
 
 @app.get("/api/sessions")
 async def list_sessions():
-    return [s.to_dict() for s in session_mgr.list_all()]
+    result = []
+    for s in session_mgr.list_all():
+        d = s.to_dict()
+        if s.client_id:
+            c = client_mgr.get(s.client_id)
+            d["client_name"] = c.name if c else None
+        result.append(d)
+    return result
 
 @app.get("/api/sessions/{session_id}")
 async def get_session(session_id: str):
@@ -223,6 +288,74 @@ async def delete_session(session_id: str):
             pass  # Best effort cleanup
     
     session_mgr.delete(session_id)
+    return {"status": "deleted"}
+
+
+# ──────────────────────────────────────────────
+#  Client endpoints
+# ──────────────────────────────────────────────
+
+class CreateClientRequest(BaseModel):
+    name: str
+    contacts: list = []
+    notes: str = ""
+
+class UpdateClientRequest(BaseModel):
+    name: str = None
+    contacts: list = None
+    notes: str = None
+
+class AddAssetRequest(BaseModel):
+    value: str
+    asset_type: str = "other"
+    label: str = ""
+
+@app.get("/api/clients")
+async def list_clients():
+    return [c.to_dict() for c in client_mgr.list_all()]
+
+@app.post("/api/clients")
+async def create_client(req: CreateClientRequest):
+    c = client_mgr.create(req.name, req.contacts, req.notes)
+    return c.to_dict()
+
+@app.get("/api/clients/{client_id}")
+async def get_client(client_id: str):
+    c = client_mgr.get(client_id)
+    if not c:
+        raise HTTPException(404, "Client not found")
+    d = c.to_dict()
+    # Attach linked sessions
+    d["sessions"] = [
+        {"id": s.id, "name": s.name, "created_at": s.created_at}
+        for s in session_mgr.list_all() if s.client_id == client_id
+    ]
+    return d
+
+@app.put("/api/clients/{client_id}")
+async def update_client(client_id: str, req: UpdateClientRequest):
+    c = client_mgr.update(client_id, name=req.name, contacts=req.contacts, notes=req.notes)
+    if not c:
+        raise HTTPException(404, "Client not found")
+    return c.to_dict()
+
+@app.delete("/api/clients/{client_id}")
+async def delete_client(client_id: str):
+    if not client_mgr.delete(client_id):
+        raise HTTPException(404, "Client not found")
+    return {"status": "deleted"}
+
+@app.post("/api/clients/{client_id}/assets")
+async def add_asset(client_id: str, req: AddAssetRequest):
+    asset = client_mgr.add_asset(client_id, req.value, req.asset_type, req.label)
+    if not asset:
+        raise HTTPException(404, "Client not found")
+    return asset.to_dict()
+
+@app.delete("/api/clients/{client_id}/assets/{asset_id}")
+async def remove_asset(client_id: str, asset_id: str):
+    if not client_mgr.remove_asset(client_id, asset_id):
+        raise HTTPException(404, "Client or asset not found")
     return {"status": "deleted"}
 
 
@@ -306,26 +439,28 @@ async def install_pip_tool(body: dict = Body(...)):
         return resp.json()
 
 @app.post("/api/tools/execute")
-async def execute_tool(req: ToolExecRequest):
+async def execute_tool(req: ToolExecRequest, current_user=Depends(get_optional_user)):
     """Execute a tool asynchronously in the toolbox container."""
     session = session_mgr.get(req.session_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    
+
     task_id = str(uuid.uuid4())[:8]
-    
+    username = current_user.username if current_user else None
+
     # Log to session
     session.add_event("tool_exec", {
         "tool": req.tool,
         "parameters": req.parameters,
         "task_id": task_id,
-    })
-    
+    }, user=username)
+
     await broadcast(req.session_id, {
         "type": "tool_start",
         "tool": req.tool,
         "task_id": task_id,
         "parameters": req.parameters,
+        "user": username,
         "timestamp": datetime.utcnow().isoformat(),
     })
     
@@ -383,24 +518,26 @@ async def _poll_task_result(session_id: str, task_id: str, tool: str, session):
     })
 
 @app.post("/api/tools/execute/bash")
-async def execute_bash(req: BashExecRequest):
+async def execute_bash(req: BashExecRequest, current_user=Depends(get_optional_user)):
     """Execute a raw bash command asynchronously."""
     session = session_mgr.get(req.session_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    
+
     task_id = str(uuid.uuid4())[:8]
-    
+    username = current_user.username if current_user else None
+
     session.add_event("bash_exec", {
         "command": req.command,
         "task_id": task_id,
-    })
-    
+    }, user=username)
+
     await broadcast(req.session_id, {
         "type": "tool_start",
         "tool": "bash",
         "task_id": task_id,
         "parameters": {"command": req.command},
+        "user": username,
         "timestamp": datetime.utcnow().isoformat(),
     })
     
@@ -435,16 +572,18 @@ async def kill_task(task_id: str):
 # ──────────────────────────────────────────────
 
 @app.post("/api/chat")
-async def chat(req: ChatMessage):
+async def chat(req: ChatMessage, current_user=Depends(get_optional_user)):
     """Send a message to the AI agent and get a response."""
     session = session_mgr.get(req.session_id)
     if not session:
         raise HTTPException(404, "Session not found")
 
+    username = current_user.username if current_user else None
+
     # Tokenize credentials before they reach Claude
     safe_message = session.tokenize_input(req.message)
 
-    session.add_message("user", safe_message)
+    session.add_message("user", safe_message, user=username)
 
     agent = PentestAgent(
         api_key=settings.anthropic_api_key,
@@ -685,23 +824,38 @@ async def export_session(session_id: str):
 # ──────────────────────────────────────────────
 
 @app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
+async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str = Query(None)):
     await websocket.accept()
-    
-    if session_id not in ws_clients:
-        ws_clients[session_id] = []
-    ws_clients[session_id].append(websocket)
-    
+
+    # Resolve username from token
+    username = "anonymous"
+    if token:
+        try:
+            payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+            sub = payload.get("sub")
+            if sub:
+                u = user_mgr.get_user(sub)
+                if u and u.enabled:
+                    username = u.username
+        except JWTError:
+            pass
+
+    entry = {"ws": websocket, "username": username, "joined_at": datetime.utcnow().isoformat()}
+    if session_id not in ws_presence:
+        ws_presence[session_id] = []
+    ws_presence[session_id].append(entry)
+    await broadcast_presence(session_id)
+
     try:
         while True:
             data = await websocket.receive_text()
-            # Handle incoming WebSocket messages if needed
             msg = json.loads(data)
             if msg.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:
-        if session_id in ws_clients:
-            ws_clients[session_id].remove(websocket)
+        if session_id in ws_presence and entry in ws_presence[session_id]:
+            ws_presence[session_id].remove(entry)
+        await broadcast_presence(session_id)
 
 
 # ──────────────────────────────────────────────
@@ -883,6 +1037,186 @@ async def delete_logo(admin=Depends(require_admin)):
     data.pop("logo", None)
     _save_settings(data)
     return {"status": "ok"}
+
+
+# ──────────────────────────────────────────────
+#  Scheduled Scans
+# ──────────────────────────────────────────────
+
+class CreateScheduleRequest(BaseModel):
+    session_id: str
+    tool: str
+    parameters: dict = {}
+    schedule_type: str  # once | cron
+    run_at: str = None
+    cron_expr: str = None
+    label: str = ""
+
+
+async def _execute_scheduled_job(job_id: str):
+    """Execute a scheduled job and record results."""
+    job = schedule_mgr.get(job_id)
+    if not job or job.status in ("disabled", "completed"):
+        return
+
+    session = session_mgr.get(job.session_id)
+    if not session:
+        schedule_mgr.update_status(job_id, "failed")
+        return
+
+    now = datetime.utcnow().isoformat()
+    schedule_mgr.update_status(job_id, "running", last_run=now)
+
+    task_id = str(uuid.uuid4())[:8]
+    session.add_event("tool_exec", {
+        "tool": job.tool,
+        "parameters": job.parameters,
+        "task_id": task_id,
+        "source": "scheduler",
+        "job_id": job_id,
+    })
+
+    await broadcast(job.session_id, {
+        "type": "tool_start",
+        "tool": job.tool,
+        "task_id": task_id,
+        "parameters": job.parameters,
+        "source": "scheduler",
+        "timestamp": now,
+    })
+
+    try:
+        async with get_toolbox_client() as client:
+            await client.post("/execute", json={
+                "tool": job.tool,
+                "parameters": job.parameters,
+                "task_id": task_id,
+                "timeout": 300,
+            })
+        asyncio.create_task(_poll_task_result(job.session_id, task_id, job.tool, session))
+        new_status = "scheduled" if job.schedule_type == "cron" else "completed"
+        schedule_mgr.update_status(job_id, new_status, last_run=now)
+    except Exception as e:
+        schedule_mgr.update_status(job_id, "failed", last_run=now)
+
+
+def _register_apscheduler_job(job):
+    """Register a job with APScheduler."""
+    try:
+        if job.schedule_type == "once":
+            run_dt = datetime.fromisoformat(job.run_at)
+            trigger = DateTrigger(run_date=run_dt)
+        else:
+            trigger = CronTrigger.from_crontab(job.cron_expr)
+
+        scheduler.add_job(
+            lambda jid=job.id: asyncio.create_task(_execute_scheduled_job(jid)),
+            trigger=trigger,
+            id=job.id,
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
+    except Exception as e:
+        print(f"[WARN] Could not register job {job.id}: {e}")
+
+
+def _restore_schedules():
+    """On startup, re-register non-completed/non-disabled jobs."""
+    now = datetime.utcnow()
+    for job in schedule_mgr.list_all():
+        if job.status in ("completed", "disabled", "failed"):
+            continue
+        if job.schedule_type == "once" and job.run_at:
+            try:
+                run_dt = datetime.fromisoformat(job.run_at)
+                if run_dt <= now:
+                    # Past due — fire immediately
+                    asyncio.create_task(_execute_scheduled_job(job.id))
+                    continue
+            except Exception:
+                pass
+        _register_apscheduler_job(job)
+
+
+@app.get("/api/schedules")
+async def list_schedules(session_id: str = None):
+    if session_id:
+        return [j.to_dict() for j in schedule_mgr.list_for_session(session_id)]
+    return [j.to_dict() for j in schedule_mgr.list_all()]
+
+
+@app.post("/api/schedules")
+async def create_schedule(req: CreateScheduleRequest, current_user=Depends(get_optional_user)):
+    if req.schedule_type not in ("once", "cron"):
+        raise HTTPException(400, "schedule_type must be 'once' or 'cron'")
+    if req.schedule_type == "cron":
+        if not req.cron_expr:
+            raise HTTPException(400, "cron_expr required for cron schedule")
+        try:
+            CronTrigger.from_crontab(req.cron_expr)
+        except Exception as e:
+            raise HTTPException(400, f"Invalid cron expression: {e}")
+    if req.schedule_type == "once" and not req.run_at:
+        raise HTTPException(400, "run_at required for one-time schedule")
+
+    username = current_user.username if current_user else None
+    job = schedule_mgr.create(
+        session_id=req.session_id,
+        tool=req.tool,
+        parameters=req.parameters,
+        schedule_type=req.schedule_type,
+        label=req.label,
+        run_at=req.run_at,
+        cron_expr=req.cron_expr,
+        created_by=username,
+    )
+    _register_apscheduler_job(job)
+    return job.to_dict()
+
+
+@app.get("/api/schedules/{job_id}")
+async def get_schedule(job_id: str):
+    job = schedule_mgr.get(job_id)
+    if not job:
+        raise HTTPException(404, "Schedule not found")
+    return job.to_dict()
+
+
+@app.delete("/api/schedules/{job_id}")
+async def delete_schedule(job_id: str):
+    try:
+        scheduler.remove_job(job_id)
+    except Exception:
+        pass
+    if not schedule_mgr.delete(job_id):
+        raise HTTPException(404, "Schedule not found")
+    return {"status": "deleted"}
+
+
+@app.post("/api/schedules/{job_id}/disable")
+async def disable_schedule(job_id: str):
+    try:
+        scheduler.pause_job(job_id)
+    except Exception:
+        pass
+    job = schedule_mgr.disable(job_id)
+    if not job:
+        raise HTTPException(404, "Schedule not found")
+    return job.to_dict()
+
+
+@app.post("/api/schedules/{job_id}/enable")
+async def enable_schedule(job_id: str):
+    job = schedule_mgr.enable(job_id)
+    if not job:
+        raise HTTPException(404, "Schedule not found")
+    _register_apscheduler_job(job)
+    return job.to_dict()
+
+
+@app.get("/api/sessions/{session_id}/schedules")
+async def list_session_schedules(session_id: str):
+    return [j.to_dict() for j in schedule_mgr.list_for_session(session_id)]
 
 
 # ──────────────────────────────────────────────

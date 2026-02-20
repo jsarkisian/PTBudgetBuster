@@ -117,6 +117,26 @@ export const api = {
   setLogo: (logo) => request('/settings/logo', { method: 'POST', body: JSON.stringify({ logo }) }),
   deleteLogo: () => request('/settings/logo', { method: 'DELETE' }),
 
+  // Screenshots
+  listScreenshots: (dir = '') => request(`/screenshots?directory=${encodeURIComponent(dir)}`),
+
+  // Clients
+  listClients: () => request('/clients'),
+  createClient: (data) => request('/clients', { method: 'POST', body: JSON.stringify(data) }),
+  getClient: (id) => request(`/clients/${id}`),
+  updateClient: (id, data) => request(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteClient: (id) => request(`/clients/${id}`, { method: 'DELETE' }),
+  addAsset: (clientId, data) => request(`/clients/${clientId}/assets`, { method: 'POST', body: JSON.stringify(data) }),
+  removeAsset: (clientId, assetId) => request(`/clients/${clientId}/assets/${assetId}`, { method: 'DELETE' }),
+
+  // Schedules
+  listSchedules: (sessionId = null) => request(`/schedules${sessionId ? `?session_id=${sessionId}` : ''}`),
+  createSchedule: (data) => request('/schedules', { method: 'POST', body: JSON.stringify(data) }),
+  getSchedule: (id) => request(`/schedules/${id}`),
+  deleteSchedule: (id) => request(`/schedules/${id}`, { method: 'DELETE' }),
+  disableSchedule: (id) => request(`/schedules/${id}/disable`, { method: 'POST' }),
+  enableSchedule: (id) => request(`/schedules/${id}/enable`, { method: 'POST' }),
+
   // Tool Management
   getToolDefinitions: () => request('/tools/definitions'),
   addToolDefinition: (data) => request('/tools/definitions', { method: 'POST', body: JSON.stringify(data) }),

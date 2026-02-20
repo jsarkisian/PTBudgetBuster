@@ -1,10 +1,21 @@
 import React, { useState } from 'react';
 
-export default function NewSessionModal({ onClose, onCreate }) {
+export default function NewSessionModal({ onClose, onCreate, clients = [] }) {
   const [name, setName] = useState('');
   const [scope, setScope] = useState('');
   const [notes, setNotes] = useState('');
+  const [clientId, setClientId] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleClientChange = (id) => {
+    setClientId(id);
+    if (id) {
+      const client = clients.find(c => c.id === id);
+      if (client && client.assets && client.assets.length > 0) {
+        setScope(client.assets.map(a => a.value).join('\n'));
+      }
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -15,6 +26,7 @@ export default function NewSessionModal({ onClose, onCreate }) {
         name: name.trim(),
         target_scope: scope.split('\n').map(s => s.trim()).filter(Boolean),
         notes: notes.trim(),
+        client_id: clientId || null,
       });
     } finally {
       setLoading(false);
@@ -29,6 +41,22 @@ export default function NewSessionModal({ onClose, onCreate }) {
           <button onClick={onClose} className="text-gray-400 hover:text-gray-200 text-xl">&times;</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {clients.length > 0 && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5 font-medium">Client</label>
+              <select
+                value={clientId}
+                onChange={e => handleClientChange(e.target.value)}
+                className="input w-full"
+              >
+                <option value="">No client</option>
+                {clients.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs text-gray-400 mb-1.5 font-medium">
               Engagement Name <span className="text-accent-red">*</span>

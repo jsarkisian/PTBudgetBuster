@@ -88,8 +88,11 @@ export default function SessionSidebar({ sessions, activeSession, onSelect, onDe
                   </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-gray-500">{session.target_scope?.[0] || 'No scope'}</span>
+              {session.client_name && (
+                <div className="text-xs text-gray-500 mt-0.5">{session.client_name}</div>
+              )}
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xs text-gray-600">{session.target_scope?.[0] || 'No scope'}</span>
                 {session.finding_count > 0 && (
                   <span className="badge-high text-[10px] px-1">{session.finding_count}</span>
                 )}
