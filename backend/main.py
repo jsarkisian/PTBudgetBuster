@@ -53,7 +53,7 @@ scheduler = AsyncIOScheduler()
 async def lifespan(app: FastAPI):
     """Startup and teardown."""
     scheduler.start()
-    _restore_schedules()
+    await _restore_schedules()
     yield
     scheduler.shutdown(wait=False)
 
@@ -1112,9 +1112,10 @@ def _register_apscheduler_job(job):
             trigger = CronTrigger.from_crontab(job.cron_expr)
 
         scheduler.add_job(
-            lambda jid=job.id: asyncio.create_task(_execute_scheduled_job(jid)),
+            _execute_scheduled_job,
             trigger=trigger,
             id=job.id,
+            args=[job.id],
             replace_existing=True,
             misfire_grace_time=3600,
         )
@@ -1122,7 +1123,7 @@ def _register_apscheduler_job(job):
         print(f"[WARN] Could not register job {job.id}: {e}")
 
 
-def _restore_schedules():
+async def _restore_schedules():
     """On startup, re-register non-completed/non-disabled jobs."""
     now = datetime.now(timezone.utc)
     for job in schedule_mgr.list_all():
@@ -1131,7 +1132,6 @@ def _restore_schedules():
         if job.schedule_type == "once" and job.run_at:
             try:
                 run_dt = datetime.fromisoformat(job.run_at)
-                # Treat naive datetimes (legacy data) as UTC
                 if run_dt.tzinfo is None:
                     run_dt = run_dt.replace(tzinfo=timezone.utc)
                 if run_dt <= now:
