@@ -21,7 +21,8 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [activeSession, setActiveSession] = useState(null);
-  const [activeTab, setActiveTab] = useState('chat');
+  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('activeTab') || 'chat');
+  const [restoredSessionId, setRestoredSessionId] = useState(() => sessionStorage.getItem('activeSessionId') || null);
   const [messages, setMessages] = useState([]);
   const [outputs, setOutputs] = useState([]);
   const [findings, setFindings] = useState([]);
@@ -89,11 +90,22 @@ export default function App() {
     }
   }, []);
 
+  // Persist activeTab and activeSession to sessionStorage
+  useEffect(() => { sessionStorage.setItem('activeTab', activeTab); }, [activeTab]);
+  useEffect(() => { sessionStorage.setItem('activeSessionId', activeSession?.id || ''); }, [activeSession?.id]);
+
   // Load data after auth
   useEffect(() => {
     if (!currentUser) return;
     api.health().then(setHealth).catch(() => {});
-    api.listSessions().then(setSessions).catch(() => {});
+    api.listSessions().then(data => {
+      setSessions(data);
+      if (restoredSessionId) {
+        const match = data.find(s => s.id === restoredSessionId);
+        if (match) setActiveSession(match);
+        setRestoredSessionId(null);
+      }
+    }).catch(() => {});
     api.listTools().then(data => setTools(data.tools || {})).catch(() => {});
     api.getLogo().then(data => setLogoUrl(data.logo || null)).catch(() => {});
   }, [currentUser]);
@@ -315,6 +327,7 @@ export default function App() {
             onNewSession={() => setShowNewSession(true)}
             onSelectSession={handleSelectSession}
             onGoToAdmin={() => { setActiveSession(null); setActiveTab('admin'); }}
+            onGoToSettings={() => { setActiveSession(null); setActiveTab('settings'); }}
           />
         )}
       </div>

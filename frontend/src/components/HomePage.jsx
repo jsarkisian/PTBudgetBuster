@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function HomePage({ sessions, currentUser, logoUrl, onNewSession, onSelectSession, onGoToAdmin }) {
+export default function HomePage({ sessions, currentUser, logoUrl, onNewSession, onSelectSession, onGoToAdmin, onGoToSettings }) {
   const recentSessions = [...sessions]
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, 5);
@@ -41,6 +41,14 @@ export default function HomePage({ sessions, currentUser, logoUrl, onNewSession,
         >
           {currentUser?.role === 'admin' ? '👥 Users' : '👤 Account'}
         </button>
+        {currentUser?.role === 'admin' && (
+          <button
+            onClick={onGoToSettings}
+            className="px-5 py-2.5 text-sm bg-dark-700 hover:bg-dark-600 text-gray-300 rounded border border-dark-500 transition-colors"
+          >
+            ⚙️ Settings
+          </button>
+        )}
       </div>
 
       {/* Recent Engagements */}
