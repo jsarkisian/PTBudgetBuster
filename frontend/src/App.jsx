@@ -9,6 +9,7 @@ import ToolPanel from './components/ToolPanel';
 import FindingsPanel from './components/FindingsPanel';
 import AutoPanel from './components/AutoPanel';
 import AdminPanel from './components/AdminPanel';
+import SettingsPanel from './components/SettingsPanel';
 import ToolsAdmin from './components/ToolsAdmin';
 import NewSessionModal from './components/NewSessionModal';
 import EditSessionModal from './components/EditSessionModal';
@@ -236,6 +237,7 @@ export default function App() {
     { id: 'auto', label: 'Autonomous' },
     { id: 'admin', label: currentUser.role === 'admin' ? 'Users' : 'Account' },
     { id: 'tooladmin', label: 'Tool Mgmt' },
+    ...(currentUser.role === 'admin' ? [{ id: 'settings', label: 'Settings' }] : []),
   ];
 
   return (
@@ -248,7 +250,7 @@ export default function App() {
           onNew={() => setShowNewSession(true)}
           onEdit={(session) => setEditingSession(session)}
         />
-        {activeSession || activeTab === 'admin' || activeTab === 'tooladmin' ? (
+        {activeSession || activeTab === 'admin' || activeTab === 'tooladmin' || activeTab === 'settings' ? (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="flex border-b border-dark-600 bg-dark-900">
               {tabs.map(tab => (
@@ -284,18 +286,21 @@ export default function App() {
                   />
                 )}
                 {activeTab === 'admin' && (
-                  <AdminPanel currentUser={currentUser} logoUrl={logoUrl} onLogoChange={setLogoUrl} />
+                  <AdminPanel currentUser={currentUser} />
                 )}
                 {activeTab === 'tooladmin' && (
                   <ToolsAdmin />
                 )}
-                {!activeSession && activeTab !== 'admin' && activeTab !== 'tooladmin' && (
+                {activeTab === 'settings' && (
+                  <SettingsPanel logoUrl={logoUrl} onLogoChange={setLogoUrl} />
+                )}
+                {!activeSession && activeTab !== 'admin' && activeTab !== 'tooladmin' && activeTab !== 'settings' && (
                   <div className="flex-1 flex items-center justify-center text-gray-500 h-full">
                     <p className="text-sm">Select an engagement to view this tab</p>
                   </div>
                 )}
               </div>
-              {activeTab !== 'admin' && activeTab !== 'tooladmin' && (
+              {activeTab !== 'admin' && activeTab !== 'tooladmin' && activeTab !== 'settings' && (
                 <div className="w-[45%] border-l border-dark-600">
                   <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
                 </div>
