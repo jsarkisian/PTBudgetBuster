@@ -7,7 +7,7 @@ Persists to JSON on the shared volume.
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -37,7 +37,7 @@ class ScheduledJob:
         self.run_at = run_at
         self.cron_expr = cron_expr
         self.label = label
-        self.created_at = datetime.utcnow().isoformat()
+        self.created_at = datetime.now(timezone.utc).isoformat()
         self.last_run: Optional[str] = None
         self.next_run: Optional[str] = run_at if schedule_type == "once" else None
         self.status = "scheduled"  # scheduled|running|completed|failed|disabled

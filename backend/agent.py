@@ -9,7 +9,7 @@ import ipaddress
 import json
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 import anthropic
@@ -319,7 +319,7 @@ class PentestAgent:
                     "task_id": task_id,
                     "parameters": tool_input["parameters"],
                     "source": "ai_agent",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 
                 self.session.add_event("tool_exec", {
@@ -354,7 +354,7 @@ class PentestAgent:
                         "parameters": tool_input.get("parameters", {}),
                     },
                     "source": "ai_agent",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 
                 output = result.get("output", "")
@@ -373,7 +373,7 @@ class PentestAgent:
                     "task_id": task_id,
                     "parameters": {"command": tool_input["command"]},
                     "source": "ai_agent",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 
                 self.session.add_event("bash_exec", {
@@ -404,7 +404,7 @@ class PentestAgent:
                     "tool": "bash",
                     "result": result,
                     "source": "ai_agent",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 
                 output = result.get("output", "")
@@ -422,7 +422,7 @@ class PentestAgent:
             await self.broadcast({
                 "type": "new_finding",
                 "finding": finding,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             
             return f"Finding recorded: [{finding['severity'].upper()}] {finding['title']}"
@@ -517,7 +517,7 @@ class PentestAgent:
             "message": f"Starting autonomous testing: {session.auto_objective}",
             "step": 0,
             "max_steps": session.auto_max_steps,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         
         # Initial planning message
@@ -560,7 +560,7 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                 "step_number": step,
                 "description": response["content"],
                 "tool_calls": response.get("tool_calls", []),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             
             # Wait for approval
@@ -576,7 +576,7 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                 await self.broadcast({
                     "type": "auto_status",
                     "message": "Approval timeout - stopping autonomous mode",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 session.auto_mode = False
                 return
@@ -585,7 +585,7 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                 await self.broadcast({
                     "type": "auto_status",
                     "message": f"Step {step} rejected by tester - stopping autonomous mode",
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 session.auto_mode = False
                 return
@@ -600,7 +600,7 @@ Steps completed: {step}/{session.auto_max_steps}"""
             "message": "Autonomous testing completed",
             "step": session.auto_current_step,
             "max_steps": session.auto_max_steps,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         
         session.auto_mode = False

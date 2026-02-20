@@ -11,7 +11,7 @@ import uuid
 import re
 from contextlib import asynccontextmanager
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import anthropic
@@ -83,7 +83,7 @@ security = HTTPBearer(auto_error=False)
 
 
 def create_token(username: str, role: str) -> str:
-    expire = datetime.utcnow() + timedelta(hours=settings.jwt_expire_hours)
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expire_hours)
     return jwt.encode(
         {"sub": username, "role": role, "exp": expire},
         settings.jwt_secret,
@@ -204,7 +204,7 @@ async def broadcast_presence(session_id: str):
     await broadcast(session_id, {
         "type": "presence_update",
         "users": users,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
 
 
@@ -461,7 +461,7 @@ async def execute_tool(req: ToolExecRequest, current_user=Depends(get_optional_u
         "task_id": task_id,
         "parameters": req.parameters,
         "user": username,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     
     # Launch async - don't block
@@ -502,7 +502,7 @@ async def _poll_task_result(session_id: str, task_id: str, tool: str, session):
                     "task_id": task_id,
                     "tool": tool,
                     "result": task,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 return
         except Exception:
@@ -514,7 +514,7 @@ async def _poll_task_result(session_id: str, task_id: str, tool: str, session):
         "task_id": task_id,
         "tool": tool,
         "result": {"status": "timeout", "output": "", "error": "Polling timeout"},
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
 
 @app.post("/api/tools/execute/bash")
@@ -538,7 +538,7 @@ async def execute_bash(req: BashExecRequest, current_user=Depends(get_optional_u
         "task_id": task_id,
         "parameters": {"command": req.command},
         "user": username,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     
     async with get_toolbox_client() as client:
@@ -631,7 +631,7 @@ async def start_autonomous(req: AutoModeRequest):
         "enabled": req.enabled,
         "objective": req.objective,
         "max_steps": req.max_steps,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     
     return {"status": "started" if req.enabled else "stopped"}
@@ -651,7 +651,7 @@ async def approve_step(req: ApprovalResponse):
             "type": "auto_step_decision",
             "step_id": req.step_id,
             "approved": req.approved,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
         
         return {"status": "approved" if req.approved else "rejected"}
@@ -671,7 +671,7 @@ async def stop_autonomous(req: dict):
     await broadcast(session_id, {
         "type": "auto_mode_changed",
         "enabled": False,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     
     return {"status": "stopped"}
@@ -840,7 +840,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str =
         except JWTError:
             pass
 
-    entry = {"ws": websocket, "username": username, "joined_at": datetime.utcnow().isoformat()}
+    entry = {"ws": websocket, "username": username, "joined_at": datetime.now(timezone.utc).isoformat()}
     if session_id not in ws_presence:
         ws_presence[session_id] = []
     ws_presence[session_id].append(entry)
@@ -1064,7 +1064,7 @@ async def _execute_scheduled_job(job_id: str):
         schedule_mgr.update_status(job_id, "failed")
         return
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     schedule_mgr.update_status(job_id, "running", last_run=now)
 
     task_id = str(uuid.uuid4())[:8]
@@ -1105,6 +1105,8 @@ def _register_apscheduler_job(job):
     try:
         if job.schedule_type == "once":
             run_dt = datetime.fromisoformat(job.run_at)
+            if run_dt.tzinfo is None:
+                run_dt = run_dt.replace(tzinfo=timezone.utc)
             trigger = DateTrigger(run_date=run_dt)
         else:
             trigger = CronTrigger.from_crontab(job.cron_expr)
@@ -1122,13 +1124,16 @@ def _register_apscheduler_job(job):
 
 def _restore_schedules():
     """On startup, re-register non-completed/non-disabled jobs."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     for job in schedule_mgr.list_all():
         if job.status in ("completed", "disabled", "failed"):
             continue
         if job.schedule_type == "once" and job.run_at:
             try:
                 run_dt = datetime.fromisoformat(job.run_at)
+                # Treat naive datetimes (legacy data) as UTC
+                if run_dt.tzinfo is None:
+                    run_dt = run_dt.replace(tzinfo=timezone.utc)
                 if run_dt <= now:
                     # Past due — fire immediately
                     asyncio.create_task(_execute_scheduled_job(job.id))

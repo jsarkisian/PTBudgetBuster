@@ -8,7 +8,7 @@ import json
 import os
 import subprocess
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -42,7 +42,7 @@ class User:
         self.display_name = display_name or username
         self.email = email
         self.ssh_keys = ssh_keys or []
-        self.created_at = created_at or datetime.utcnow().isoformat()
+        self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.last_login = last_login
         self.enabled = enabled
 
@@ -192,7 +192,7 @@ class UserManager:
         username = username_raw.lower()
         user = self.users.get(username) or self.users.get(username.lower()) or self.users.get(username.capitalize())
         if user and user.enabled and user.verify_password(password):
-            user.last_login = datetime.utcnow().isoformat()
+            user.last_login = datetime.now(timezone.utc).isoformat()
             self._save()
             return user
         return None
@@ -284,7 +284,7 @@ class UserManager:
             "name": name,
             "pubkey": pubkey,
             "fingerprint": fingerprint,
-            "added_at": datetime.utcnow().isoformat(),
+            "added_at": datetime.now(timezone.utc).isoformat(),
         }
         user.ssh_keys.append(key_entry)
         self._save()

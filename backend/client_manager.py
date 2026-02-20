@@ -7,7 +7,7 @@ Persists all data to JSON on the shared volume.
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -22,7 +22,7 @@ class Asset:
         self.value = value
         self.asset_type = asset_type  # domain|ip|cidr|url|wildcard|other
         self.label = label
-        self.added_at = datetime.utcnow().isoformat()
+        self.added_at = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict:
         return {
@@ -52,7 +52,7 @@ class Client:
         self.contacts = contacts or []  # list of {name, email, phone, role}
         self.notes = notes
         self.assets: list[Asset] = []
-        self.created_at = datetime.utcnow().isoformat()
+        self.created_at = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict:
         return {

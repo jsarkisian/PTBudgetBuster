@@ -8,7 +8,7 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -23,7 +23,7 @@ class Session:
         self.target_scope = target_scope
         self.notes = notes
         self.client_id = client_id
-        self.created_at = datetime.utcnow().isoformat()
+        self.created_at = datetime.now(timezone.utc).isoformat()
         self.messages: list[dict] = []
         self.events: list[dict] = []
         self.findings: list[dict] = []
@@ -43,7 +43,7 @@ class Session:
         entry = {
             "role": role,
             "content": content,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         if user is not None:
             entry["user"] = user
@@ -54,7 +54,7 @@ class Session:
         entry = {
             "type": event_type,
             "data": data,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         if user is not None:
             entry["user"] = user
@@ -68,7 +68,7 @@ class Session:
             "title": title,
             "description": description,
             "evidence": evidence,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self.findings.append(finding)
         self._save()
