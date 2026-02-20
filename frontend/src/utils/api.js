@@ -81,15 +81,19 @@ export const api = {
   // Export
   exportSession: (id) => {
     const url = `${BASE_URL}/sessions/${id}/export`;
-    // Add auth header via fetch for download
     fetch(url, {
       headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
     })
-      .then(res => res.blob())
-      .then(blob => {
+      .then(res => {
+        const disposition = res.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^";\n]+)"?/);
+        const filename = match ? match[1].trim() : `engagement_${id}_export.zip`;
+        return res.blob().then(blob => ({ blob, filename }));
+      })
+      .then(({ blob, filename }) => {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `engagement_export.zip`;
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(a.href);
       });
