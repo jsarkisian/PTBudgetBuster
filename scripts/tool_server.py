@@ -94,6 +94,20 @@ def _find_primary_target(tool_def: dict):
     return None, False
 
 
+def _inject_screenshot_path(cmd: list, task_dir: Path) -> list:
+    """If an httpx command uses -screenshot but has no -screenshot-path, inject one
+    so screenshots land in the task-specific directory instead of a global folder."""
+    if not any(part in ('/root/go/bin/httpx', 'httpx') for part in cmd):
+        return cmd
+    if '-screenshot' not in cmd:
+        return cmd
+    if '-screenshot-path' in cmd:
+        return cmd
+    screenshots_dir = task_dir / 'screenshots'
+    screenshots_dir.mkdir(parents=True, exist_ok=True)
+    return cmd + ['-screenshot-path', str(screenshots_dir)]
+
+
 def build_command(tool_name: str, parameters: dict) -> list:
     """Build command from tool definition and parameters."""
     tool_def = TOOL_DEFS[tool_name]
@@ -263,8 +277,9 @@ async def execute_tool(request: ToolRequest):
         use_shell = False
     else:
         cmd = build_command(request.tool, request.parameters)
+        cmd = _inject_screenshot_path(cmd, task_dir)
         use_shell = False
-    
+
     # Initialize task tracking
     running_tasks[task_id] = {
         "task_id": task_id,
@@ -309,7 +324,8 @@ async def execute_tool_sync(request: ToolRequest):
         cmd = ["/bin/bash", "-c", request.parameters.get("command", "")]
     else:
         cmd = build_command(request.tool, request.parameters)
-    
+        cmd = _inject_screenshot_path(cmd, task_dir)
+
     running_tasks[task_id] = {
         "task_id": task_id,
         "tool": request.tool,
@@ -404,23 +420,30 @@ async def serve_image(path: str):
 
 
 @app.get("/screenshots")
-async def list_screenshots(directory: str = ""):
-    """List all screenshot image files recursively from all known locations."""
+async def list_screenshots(directory: str = "", task_id: str = ""):
+    """List screenshot image files.
+
+    If task_id is provided, only return screenshots from that task's directory
+    (DATA_DIR/{task_id}/screenshots/).  Otherwise return all screenshots.
+    """
     image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
     screenshots = []
-    
-    # Search all common screenshot directories
-    search_dirs = [
-        Path(DATA_DIR),
-        Path("/opt/pentest/output"),
-    ]
-    
+
+    if task_id:
+        # Scoped: only look inside the task's own directory
+        search_dirs = [Path(DATA_DIR) / task_id]
+    else:
+        # Global: all known screenshot locations
+        search_dirs = [
+            Path(DATA_DIR),
+            Path("/opt/pentest/output"),
+        ]
+
     for search_dir in search_dirs:
         if not search_dir.exists():
             continue
         for file_path in search_dir.rglob("*"):
             if file_path.is_file() and file_path.suffix.lower() in image_exts:
-                # Build a path relative to /opt/pentest so the proxy can find it
                 try:
                     rel_path = str(file_path.relative_to("/opt/pentest"))
                 except ValueError:
@@ -432,7 +455,7 @@ async def list_screenshots(directory: str = ""):
                     "size": file_path.stat().st_size,
                     "modified": datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
                 })
-    
+
     return {"screenshots": screenshots}
 
 

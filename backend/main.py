@@ -722,9 +722,14 @@ async def read_file(path: str):
         return resp.json()
 
 @app.get("/api/screenshots")
-async def list_screenshots(directory: str = ""):
+async def list_screenshots(directory: str = "", task_id: str = ""):
+    params = {}
+    if directory:
+        params["directory"] = directory
+    if task_id:
+        params["task_id"] = task_id
     async with get_toolbox_client() as client:
-        resp = await client.get("/screenshots", params={"directory": directory})
+        resp = await client.get("/screenshots", params=params)
         return resp.json()
 
 @app.get("/api/images/{path:path}")

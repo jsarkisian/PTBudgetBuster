@@ -333,19 +333,18 @@ function ExecutionCard({ entry, onImageClick }) {
   const icon = TOOL_ICONS[tool] || '🔧';
   const desc = TOOL_DESCRIPTIONS[tool];
 
-  // Screenshot detection
+  // Screenshot detection: parse paths from output text, then supplement with a
+  // task-scoped API lookup (never a global lookup — that causes cross-run bleed).
   const paramValues = Object.values(params).map(v => String(v)).join('\n');
   const imagePaths = useMemo(() => extractImagePaths([output, error, paramValues].join('\n')), [output, error, paramValues]);
   const [apiScreenshots, setApiScreenshots] = useState([]);
-  const isScreenshotTool = tool === 'gowitness' || cmd.includes('screenshot');
   useEffect(() => {
-    if (isScreenshotTool && isSuccess && imagePaths.length === 0) {
-      fetch('/api/screenshots')
-        .then(r => r.json())
-        .then(d => { if (d.screenshots?.length) setApiScreenshots(d.screenshots.map(s => s.path)); })
-        .catch(() => {});
-    }
-  }, [isSuccess]);
+    if (!isSuccess || !entry.id) return;
+    fetch(`/api/screenshots?task_id=${encodeURIComponent(entry.id)}`)
+      .then(r => r.json())
+      .then(d => { if (d.screenshots?.length) setApiScreenshots(d.screenshots.map(s => s.path)); })
+      .catch(() => {});
+  }, [isSuccess, entry.id]);
   const allImages = useMemo(() => [...new Set([...imagePaths, ...apiScreenshots])], [imagePaths, apiScreenshots]);
 
   const colorizedLines = useMemo(() => colorizeOutput(output), [output]);

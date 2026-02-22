@@ -187,9 +187,8 @@ Common wordlist paths available:
 7. When in autonomous mode ONLY, you may chain tools and propose next steps. In normal chat mode, NEVER auto-chain.
 
 ## Tool Tips
-- **Screenshots**: Always use httpx with -screenshot flag. Save to /opt/pentest/data/screenshots/ using --screenshot-path. Example: `echo "target.com" | httpx -screenshot -screenshot-path /opt/pentest/data/screenshots/`
-  For multiple targets from a file: `httpx -l /opt/pentest/data/targets.txt -screenshot -screenshot-path /opt/pentest/data/screenshots/`
-  httpx saves each screenshot as a separate file named by the URL, avoiding overwrites.
+- **Screenshots**: Use httpx with -screenshot flag. Do NOT specify -screenshot-path — the platform injects a task-specific path automatically so screenshots are isolated per scan. Example: `echo "target.com" | httpx -screenshot`
+  For multiple targets from a file: `httpx -l /opt/pentest/data/targets.txt -screenshot`
 
 ## Output Format
 When reporting findings, use this structure:
