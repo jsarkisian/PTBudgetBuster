@@ -168,6 +168,21 @@ export default function App() {
         }]);
         setAutoCurrentStatus(null);
         break;
+      case 'scope_updated':
+        setActiveSession(prev => {
+          if (!prev) return prev;
+          const updated = { ...prev, target_scope: event.target_scope };
+          setSessions(sessions => sessions.map(s => s.id === prev.id ? updated : s));
+          return updated;
+        });
+        if (event.added?.length > 0) {
+          setOutputs(prev => [...prev, {
+            id: `scope-${Date.now()}`, type: 'scope_updated',
+            added: event.added, target_scope: event.target_scope,
+            reason: event.reason, timestamp: event.timestamp,
+          }]);
+        }
+        break;
       case 'presence_update':
         setOnlineUsers(event.users || []);
         break;

@@ -268,6 +268,9 @@ export default function OutputPanel({ outputs, onClear }) {
             if (entry.type === 'auto_status') {
               return <StatusLine key={`s-${i}`} entry={entry} />;
             }
+            if (entry.type === 'scope_updated') {
+              return <ScopeUpdatedCard key={entry.id || i} entry={entry} />;
+            }
             if (entry.type === 'execution') {
               return (
                 <ExecutionCard
@@ -284,6 +287,61 @@ export default function OutputPanel({ outputs, onClear }) {
 
       {lightbox && (
         <Lightbox src={lightbox.src} filename={lightbox.filename} onClose={() => setLightbox(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── Scope expansion notice ─────────────────────────────────────────────
+
+function ScopeUpdatedCard({ entry }) {
+  const [expanded, setExpanded] = useState(false);
+  const { added = [], target_scope = [], reason, timestamp } = entry;
+  return (
+    <div className="border border-accent-blue/25 rounded overflow-hidden">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left bg-dark-800 hover:bg-dark-700 transition-colors"
+      >
+        <span className="shrink-0 text-accent-blue text-sm">+</span>
+        <span className="text-[11px] font-semibold text-accent-blue shrink-0">Scope expanded</span>
+        <span className="text-[11px] text-gray-400 flex-1 truncate">
+          {added.length > 0
+            ? `${added.length} host${added.length !== 1 ? 's' : ''} added via ${reason || 'discovery'}`
+            : reason || 'scope updated'}
+        </span>
+        <span className="text-gray-600 text-[10px] tabular-nums shrink-0">
+          {timestamp ? new Date(timestamp).toLocaleTimeString() : ''}
+        </span>
+        <span className="text-gray-600 text-[10px] shrink-0">{expanded ? '▲' : '▼'}</span>
+      </button>
+      {expanded && (
+        <div className="border-t border-dark-700 px-3 py-2 space-y-2">
+          {added.length > 0 && (
+            <div>
+              <div className="text-[10px] text-gray-600 mb-1 font-semibold uppercase tracking-wider">Newly added</div>
+              <div className="flex flex-wrap gap-1">
+                {added.map((h, i) => (
+                  <span key={i} className="font-mono text-[11px] bg-accent-blue/10 text-accent-cyan px-2 py-0.5 rounded">
+                    {h}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <div className="text-[10px] text-gray-600 mb-1 font-semibold uppercase tracking-wider">
+              Full scope ({target_scope.length})
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {target_scope.map((h, i) => (
+                <span key={i} className="font-mono text-[11px] bg-dark-700 text-gray-300 px-2 py-0.5 rounded">
+                  {h}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

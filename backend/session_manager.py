@@ -250,6 +250,15 @@ CURRENT FINDINGS:
             return [self.detokenize_obj(i) for i in obj]
         return obj
 
+    def add_to_scope(self, hosts: list[str]) -> list[str]:
+        """Add hosts to target_scope, deduplicating. Returns list of newly added hosts."""
+        existing = {h.strip().lower() for h in self.target_scope}
+        new_hosts = [h.strip() for h in hosts if h.strip() and h.strip().lower() not in existing]
+        if new_hosts:
+            self.target_scope.extend(new_hosts)
+            self._save()
+        return new_hosts
+
     def _save(self):
         """Persist session to disk."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)

@@ -260,6 +260,14 @@ async def update_session(session_id: str, req: UpdateSessionRequest):
     if req.notes is not None:
         session.notes = req.notes
     session._save()
+    if req.target_scope is not None:
+        await broadcast(session_id, {
+            "type": "scope_updated",
+            "added": [],
+            "target_scope": session.target_scope,
+            "reason": "manual edit",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
     return session.to_dict()
 
 @app.delete("/api/sessions/{session_id}")

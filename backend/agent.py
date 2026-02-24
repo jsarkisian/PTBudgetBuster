@@ -186,6 +186,7 @@ Common wordlist paths available:
 6. Categorize findings by severity: Critical, High, Medium, Low, Informational.
 7. Provide actionable remediation advice for findings when asked.
 8. When in autonomous mode ONLY, you may chain tools and propose next steps. In normal chat mode, NEVER auto-chain.
+9. **SCOPE EXPANSION**: After any tool that discovers new subdomains or hosts (subfinder, amass, dnsx, katana, gobuster DNS mode, dnsrecon, theharvester, gospider, gau, etc.), call `add_to_scope` with the discovered hosts BEFORE presenting results. Only skip clearly out-of-scope or irrelevant hosts.
 
 ## Tool Tips
 - **Screenshots**: Use httpx with -screenshot flag. Do NOT specify -screenshot-path — the platform injects a task-specific path automatically so screenshots are isolated per scan. Example: `echo "target.com" | httpx -screenshot`
@@ -289,6 +290,25 @@ class PentestAgent:
                         },
                     },
                     "required": ["path"],
+                },
+            },
+            {
+                "name": "add_to_scope",
+                "description": "Add newly discovered subdomains, hosts, or IPs to the engagement scope so they are included in future testing. Call this after any tool that discovers new hosts or subdomains (subfinder, amass, dnsx, katana, gobuster DNS, dnsrecon, theharvester, etc.).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "hosts": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of hostnames, subdomains, or IPs to add to scope",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Brief note on where these were discovered (e.g. 'subfinder results')",
+                        },
+                    },
+                    "required": ["hosts"],
                 },
             },
         ]
@@ -433,7 +453,22 @@ class PentestAgent:
                 if resp.status_code == 200:
                     return resp.json().get("content", "")
                 return f"Error reading file: {resp.status_code}"
-        
+
+        elif tool_name == "add_to_scope":
+            hosts = tool_input.get("hosts", [])
+            reason = tool_input.get("reason", "tool discovery")
+            added = self.session.add_to_scope(hosts)
+            if added:
+                await self.broadcast({
+                    "type": "scope_updated",
+                    "added": added,
+                    "target_scope": self.session.target_scope,
+                    "reason": reason,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                return f"Added {len(added)} new host(s) to scope ({reason}): {', '.join(added)}"
+            return f"No new hosts to add — all {len(hosts)} provided host(s) were already in scope."
+
         return "Unknown tool"
     
     async def chat(self, user_message: str) -> dict:
