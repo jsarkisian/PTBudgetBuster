@@ -284,20 +284,21 @@ async def delete_session(session_id: str):
         if tid:
             task_ids.add(tid)
     
-    # Clean up task output directories on toolbox
-    if task_ids:
-        try:
-            async with get_toolbox_client() as client:
-                # Use bash to remove task data dirs
-                dirs = " ".join(f"/opt/pentest/data/{tid}" for tid in task_ids)
-                await client.post("/execute/sync", json={
-                    "tool": "bash",
-                    "parameters": {"command": f"rm -rf {dirs} 2>/dev/null; echo done"},
-                    "task_id": f"cleanup-{session_id[:8]}",
-                    "timeout": 10,
-                })
-        except Exception:
-            pass  # Best effort cleanup
+    # Clean up task output directories and global screenshot dir on toolbox
+    try:
+        async with get_toolbox_client() as client:
+            dirs = " ".join(f"/opt/pentest/data/{tid}" for tid in task_ids) if task_ids else ""
+            # Also remove the global screenshots dir (legacy fallback path when
+            # task-scoped -screenshot-path injection was not applied)
+            cleanup_cmd = f"rm -rf {dirs} /opt/pentest/data/screenshots 2>/dev/null; echo done"
+            await client.post("/execute/sync", json={
+                "tool": "bash",
+                "parameters": {"command": cleanup_cmd},
+                "task_id": f"cleanup-{session_id[:8]}",
+                "timeout": 10,
+            })
+    except Exception:
+        pass  # Best effort cleanup
     
     session_mgr.delete(session_id)
     return {"status": "deleted"}

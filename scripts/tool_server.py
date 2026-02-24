@@ -95,11 +95,11 @@ def _find_primary_target(tool_def: dict):
 
 
 def _inject_screenshot_path(cmd: list, task_dir: Path) -> list:
-    """If an httpx command uses -screenshot but has no -screenshot-path, inject one
+    """If an httpx command uses -screenshot/-ss but has no -screenshot-path, inject one
     so screenshots land in the task-specific directory instead of a global folder."""
     if not any(part in ('/root/go/bin/httpx', 'httpx') for part in cmd):
         return cmd
-    if '-screenshot' not in cmd:
+    if '-screenshot' not in cmd and '-ss' not in cmd:
         return cmd
     if '-screenshot-path' in cmd:
         return cmd
