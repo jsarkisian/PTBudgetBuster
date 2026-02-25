@@ -102,8 +102,8 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
             <div className="text-3xl mb-2">🎯</div>
             <p className="text-sm">Configure an objective and start autonomous testing.</p>
             <p className="text-xs mt-2 text-gray-600">
-              The AI will plan and execute each step, waiting for your approval before continuing.
-              You can see its full reasoning and tool calls here.
+              The AI proposes each step for your approval before running anything.
+              Nothing executes until you approve it.
             </p>
           </div>
         ) : (
@@ -141,9 +141,9 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
         </div>
       )}
 
-      {/* Chat input — always visible while running */}
+      {/* Chat input + stop button — always visible while running */}
       {isRunning && (
-        <div className="shrink-0 border-t border-dark-600 bg-dark-900 p-3">
+        <div className="shrink-0 border-t border-dark-600 bg-dark-900 p-3 space-y-2">
           <div className="flex gap-2 items-end">
             <textarea
               ref={chatInputRef}
@@ -163,9 +163,12 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
               {sending ? '…' : 'Send'}
             </button>
           </div>
-          <p className="text-xs text-gray-600 mt-1">
-            Messages are queued and the AI will respond {pendingApproval ? 'now (it\'s waiting)' : 'after its current action finishes'}.
-          </p>
+          <button
+            onClick={onStop}
+            className="w-full py-1.5 text-xs font-semibold text-red-400 bg-red-500/10 border border-red-500/30 rounded hover:bg-red-500/20 transition-colors"
+          >
+            Stop Autonomous Mode
+          </button>
         </div>
       )}
     </div>
@@ -211,22 +214,41 @@ function StatusEntry({ entry }) {
 function StepEntry({ entry, isPending, onApprove }) {
   const [expanded, setExpanded] = useState(true);
 
-  const statusIcon = entry.status === 'approved'
+  const isCompleted = entry.status === 'completed';
+  const isApproved = entry.status === 'approved';
+  const isRejected = entry.status === 'rejected';
+  const isExecuting = isApproved && !isCompleted;
+
+  const statusIcon = isCompleted
     ? <span className="text-accent-green font-bold">✓</span>
-    : entry.status === 'rejected'
+    : isRejected
     ? <span className="text-accent-red font-bold">✗</span>
+    : isExecuting
+    ? <span className="text-accent-blue font-bold animate-pulse">▶</span>
     : <span className="text-accent-yellow font-bold">⏳</span>;
 
-  const borderColor = entry.status === 'approved'
+  const statusLabel = isCompleted
+    ? null
+    : isRejected
+    ? null
+    : isExecuting
+    ? <span className="text-xs text-accent-blue">— Executing…</span>
+    : <span className="text-xs text-accent-yellow">— Approve this proposal?</span>;
+
+  const borderColor = isCompleted
     ? 'border-accent-green/20'
-    : entry.status === 'rejected'
+    : isRejected
     ? 'border-accent-red/20'
+    : isExecuting
+    ? 'border-accent-blue/30'
     : 'border-accent-yellow/40';
 
-  const headerBg = entry.status === 'approved'
+  const headerBg = isCompleted
     ? 'bg-green-500/5'
-    : entry.status === 'rejected'
+    : isRejected
     ? 'bg-red-500/5'
+    : isExecuting
+    ? 'bg-blue-500/5'
     : 'bg-yellow-500/8';
 
   // Extract tool names for collapsed summary
@@ -245,9 +267,7 @@ function StepEntry({ entry, isPending, onApprove }) {
       >
         <span className="text-xs shrink-0">{statusIcon}</span>
         <span className="text-xs font-semibold text-gray-200 shrink-0">Step {entry.stepNumber}</span>
-        {entry.status === 'pending' && (
-          <span className="text-xs text-accent-yellow">— Approval Required</span>
-        )}
+        {statusLabel}
         {toolNames.length > 0 && (
           <span className="ml-auto text-xs text-gray-600 font-mono truncate max-w-[120px]">
             {toolNames.join(', ')}
@@ -258,16 +278,39 @@ function StepEntry({ entry, isPending, onApprove }) {
 
       {expanded && (
         <div className="px-3 pb-3 pt-2 space-y-3 bg-dark-800/40">
-          {/* AI reasoning / description */}
+          {/* Proposal label */}
+          <div className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+            {isPending ? 'Proposed action' : 'Proposal'}
+          </div>
+
+          {/* AI proposal / description */}
           <div className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
             {entry.description || <span className="text-gray-600 italic">No description provided</span>}
           </div>
 
-          {/* Tool calls */}
+          {/* Approval buttons — shown BEFORE execution */}
+          {isPending && (
+            <div className="flex gap-2 pt-1 border-t border-dark-600">
+              <button
+                onClick={() => onApprove(entry.stepId, true)}
+                className="btn-success flex-1 text-xs py-1.5"
+              >
+                ✓ Approve & Execute
+              </button>
+              <button
+                onClick={() => onApprove(entry.stepId, false)}
+                className="btn-danger flex-1 text-xs py-1.5"
+              >
+                ✗ Reject & Stop
+              </button>
+            </div>
+          )}
+
+          {/* Execution results — shown AFTER execution completes */}
           {entry.toolCalls?.length > 0 && (
-            <div>
+            <div className="border-t border-dark-600 pt-2">
               <div className="text-xs text-gray-500 font-medium mb-1 uppercase tracking-wide">
-                Tools executed ({entry.toolCalls.length})
+                Execution results ({entry.toolCalls.length} tool{entry.toolCalls.length !== 1 ? 's' : ''})
               </div>
               <div className="space-y-1">
                 {entry.toolCalls.map((tc, i) => (
@@ -277,21 +320,13 @@ function StepEntry({ entry, isPending, onApprove }) {
             </div>
           )}
 
-          {/* Approval buttons */}
-          {isPending && (
-            <div className="flex gap-2 pt-1 border-t border-dark-600">
-              <button
-                onClick={() => onApprove(entry.stepId, true)}
-                className="btn-success flex-1 text-xs py-1.5"
-              >
-                ✓ Approve & Continue
-              </button>
-              <button
-                onClick={() => onApprove(entry.stepId, false)}
-                className="btn-danger flex-1 text-xs py-1.5"
-              >
-                ✗ Reject & Stop
-              </button>
+          {/* Summary — shown after execution */}
+          {entry.summary && (
+            <div className="border-t border-dark-600 pt-2">
+              <div className="text-xs text-gray-500 font-medium mb-1 uppercase tracking-wide">Summary</div>
+              <div className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+                {entry.summary}
+              </div>
             </div>
           )}
         </div>

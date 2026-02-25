@@ -130,7 +130,9 @@ export default function App() {
         break;
       case 'auto_step_complete':
         setAutoHistory(prev => prev.map(e =>
-          e.stepId === event.step_id ? { ...e, status: 'approved' } : e
+          e.stepId === event.step_id
+            ? { ...e, status: 'completed', toolCalls: event.tool_calls || e.toolCalls, summary: event.summary }
+            : e
         ));
         break;
       case 'auto_mode_changed':

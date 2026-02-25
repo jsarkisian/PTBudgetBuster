@@ -104,11 +104,15 @@ Set an objective and let the AI plan and execute a multi-step test:
 
 - Set an objective (e.g., "full recon and vuln scan of target scope")
 - Configure max steps (3-50)
-- AI plans and executes each step -- every step requires your approval before running
-- Reject any step to stop immediately
-- You can chat with the AI during autonomous mode (between steps)
+- Each step follows a **propose-then-execute** model:
+  1. AI proposes what it wants to do (specific tool and arguments)
+  2. You review the proposal and approve or reject it
+  3. Only after approval does the AI execute the proposed action
+  4. Results are displayed with a summary before the next proposal
+- Nothing runs until you approve it -- reject any step to stop immediately
+- Chat with the AI during autonomous mode to redirect or ask questions
 - AI can propose adding discovered hosts to scope -- requires your approval
-- Real-time status broadcasts show reasoning, tool execution, and progress
+- Stop button always available to halt at any point
 
 ### Findings
 

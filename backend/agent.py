@@ -468,7 +468,7 @@ uncover -q "http.title:\"example\"" -e shodan -silent
 5. After running a tool, present the results and STOP. Wait for the user to tell you what to do next.
 6. Categorize findings by severity: Critical, High, Medium, Low, Informational.
 7. Provide actionable remediation advice for findings when asked.
-8. When in autonomous mode ONLY, you may chain tools and propose next steps. In normal chat mode, NEVER auto-chain.
+8. When in autonomous mode, each step has a PROPOSE phase (describe what you want to do, no tools) and an EXECUTE phase (run exactly what was proposed, nothing extra). In normal chat mode, NEVER auto-chain.
 9. **SCOPE EXPANSION**: After any tool that discovers new subdomains or hosts (subfinder, amass, dnsx, katana, gobuster DNS mode, dnsrecon, theharvester, gospider, gau, etc.), call `add_to_scope` with the discovered hosts BEFORE presenting results. Only skip clearly out-of-scope or irrelevant hosts.
 
 ## Platform Notes
@@ -867,7 +867,7 @@ class PentestAgent:
             messages.append({"role": "user", "content": tool_results})
     
     async def autonomous_loop(self):
-        """Run autonomous testing loop with approval gates and real-time status broadcasts."""
+        """Run autonomous testing loop with propose-then-execute approval gates."""
         session = self.session
 
         def _ts():
@@ -888,13 +888,16 @@ class PentestAgent:
 OBJECTIVE: {session.auto_objective}
 MAX STEPS: {session.auto_max_steps}
 
-Plan your approach and execute the FIRST step. For each step:
-1. Briefly explain what you're about to do and why (1-3 sentences)
-2. Execute the appropriate tool(s)
-3. Analyse the results
-4. Summarise what you found and what the next step should be
+IMPORTANT — How autonomous mode works:
+- Each step has TWO phases: PROPOSE then EXECUTE.
+- Right now you are in the PROPOSE phase. You do NOT have access to tools.
+- Describe what you want to do in this step: which tool(s) you will run, with what arguments, and why.
+- Be specific — state the exact command(s) you plan to run (e.g. "Run subfinder -d example.com -silent").
+- Do NOT describe more than one logical action per step. One tool or one short pipeline per step.
+- The human operator will review your proposal and approve or reject it.
+- If approved, you will then be asked to execute EXACTLY what you proposed — nothing more, nothing less.
 
-Begin with step 1. Focus on methodical, thorough testing within scope."""
+Propose your first step now. What is the first thing you want to do and why?"""
 
         conversation.append({"role": "user", "content": first_prompt})
 
@@ -902,119 +905,43 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
             session.auto_current_step += 1
             step = session.auto_current_step
 
-            await _status(f"Step {step}/{session.auto_max_steps}: Asking AI what to do next…")
+            # ══════════════════════════════════════════════════════════════════
+            # PHASE 1: PROPOSE — Claude describes what it wants to do (no tools)
+            # ══════════════════════════════════════════════════════════════════
+            await _status(f"Step {step}/{session.auto_max_steps}: AI is planning…")
 
-            step_tool_calls: list[dict] = []
-            step_text_parts: list[str] = []
+            if not session.auto_mode:
+                return
 
-            # ── Inner agentic loop for this step ──────────────────────────────
-            while True:
-                # Stop check before every Claude call
-                if not session.auto_mode:
-                    return
+            proposal_response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                system=system,
+                messages=conversation,
+                # NO tools — Claude can only describe its plan
+            )
 
-                response = await self.client.messages.create(
-                    model=self.model,
-                    max_tokens=4096,
-                    system=system,
-                    tools=self._get_tools_schema(),
-                    messages=conversation,
-                )
+            if not session.auto_mode:
+                return
 
-                # Stop check after Claude responds (in case Stop was clicked while waiting)
-                if not session.auto_mode:
-                    return
+            proposal_text = "\n".join(
+                b.text for b in proposal_response.content if b.type == "text"
+            ).strip() or "(no proposal provided)"
 
-                has_tool_use = any(b.type == "tool_use" for b in response.content)
+            conversation.append({"role": "assistant", "content": proposal_text})
 
-                # Collect any text Claude wrote before/after tool calls
-                for block in response.content:
-                    if block.type == "text" and block.text.strip():
-                        step_text_parts.append(block.text)
-                        # Broadcast the AI's reasoning so the user can read it live
-                        snippet = block.text.strip()[:300]
-                        await _status(f"Step {step}: {snippet}{'…' if len(block.text.strip()) > 300 else ''}")
+            snippet = proposal_text[:300]
+            await _status(f"Step {step}: {snippet}{'…' if len(proposal_text) > 300 else ''}")
 
-                if not has_tool_use:
-                    # Claude is done for this step — build final description
-                    break
-
-                # ── Execute tool calls ─────────────────────────────────────────
-                assistant_content = []
-                tool_results = []
-
-                for block in response.content:
-                    if block.type == "text":
-                        assistant_content.append({"type": "text", "text": block.text})
-                    elif block.type == "tool_use":
-                        # Stop check before each tool
-                        if not session.auto_mode:
-                            return
-
-                        assistant_content.append({
-                            "type": "tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": block.input,
-                        })
-
-                        # Human-readable tool label for status
-                        if block.name == "execute_tool":
-                            tool_label = block.input.get("tool", "tool")
-                            raw = (block.input.get("parameters") or {}).get("__raw_args__", "")
-                            detail = f" {raw[:60]}" if raw else ""
-                        elif block.name == "execute_bash":
-                            tool_label = "bash"
-                            detail = f": {block.input.get('command', '')[:80]}"
-                        elif block.name == "record_finding":
-                            tool_label = "record_finding"
-                            detail = f": [{block.input.get('severity','?').upper()}] {block.input.get('title','')}"
-                        else:
-                            tool_label = block.name
-                            detail = ""
-
-                        await _status(f"Step {step}: Running {tool_label}{detail}…")
-
-                        result = await self._execute_tool_call(block.name, block.input)
-
-                        # Stop check after each tool (tools can be long-running)
-                        if not session.auto_mode:
-                            return
-
-                        await _status(f"Step {step}: {tool_label} finished — analysing output…")
-
-                        step_tool_calls.append({
-                            "tool": block.name,
-                            "input": block.input,
-                            "result_preview": result[:500],
-                        })
-
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                        })
-
-                conversation.append({"role": "assistant", "content": assistant_content})
-                conversation.append({"role": "user", "content": tool_results})
-            # ── End inner loop ─────────────────────────────────────────────────
-
-            # Add Claude's final text turn to conversation so next step has context
-            if step_text_parts:
-                final_text = "\n\n".join(step_text_parts)
-                conversation.append({"role": "assistant", "content": final_text})
-
-            full_description = "\n\n".join(step_text_parts) if step_text_parts else "(no summary provided)"
-
-            await _status(f"Step {step}: Done executing — waiting for your approval…")
-
-            # ── Approval gate ──────────────────────────────────────────────────
+            # ══════════════════════════════════════════════════════════════════
+            # APPROVAL GATE — user reviews the PROPOSAL before anything runs
+            # ══════════════════════════════════════════════════════════════════
             step_id = str(uuid.uuid4())[:8]
             session.auto_pending_approval = {
                 "step_id": step_id,
                 "step_number": step,
-                "description": full_description,
-                "tool_calls": step_tool_calls,
+                "description": proposal_text,
+                "tool_calls": [],  # Nothing executed yet
                 "approved": None,
                 "resolved": False,
             }
@@ -1023,12 +950,12 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                 "type": "auto_step_pending",
                 "step_id": step_id,
                 "step_number": step,
-                "description": full_description,
-                "tool_calls": step_tool_calls,
+                "description": proposal_text,
+                "tool_calls": [],
                 "timestamp": _ts(),
             })
 
-            timeout = 300
+            timeout = 600  # 10 min to review
             elapsed = 0
             while not session.auto_pending_approval.get("resolved") and elapsed < timeout:
                 if not session.auto_mode:
@@ -1040,13 +967,12 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                     session.auto_user_messages.clear()
                     for user_msg in queued:
                         conversation.append({"role": "user", "content": user_msg})
-                        await _status(f"Responding to your message…")
+                        await _status("Responding to your message…")
                         reply_resp = await self.client.messages.create(
                             model=self.model,
                             max_tokens=1024,
                             system=system,
                             messages=conversation,
-                            # No tools — pure conversational reply
                         )
                         reply_text = "\n".join(
                             b.text for b in reply_resp.content if b.type == "text"
@@ -1071,30 +997,143 @@ Begin with step 1. Focus on methodical, thorough testing within scope."""
                 session.auto_mode = False
                 return
 
-            await self.broadcast({
-                "type": "auto_step_complete",
-                "step_id": step_id,
-                "step_number": step,
-                "timestamp": _ts(),
-            })
+            # ══════════════════════════════════════════════════════════════════
+            # PHASE 2: EXECUTE — Claude runs ONLY what was proposed
+            # ══════════════════════════════════════════════════════════════════
+            await _status(f"Step {step}: Approved — executing…")
 
-            # Drain any final messages queued right at approval time
+            # Drain any messages queued during approval
             extra_context = ""
             if session.auto_user_messages:
                 queued = session.auto_user_messages[:]
                 session.auto_user_messages.clear()
-                extra_context = " The tester also said: " + " | ".join(queued)
+                extra_context = "\n\nThe tester also said: " + " | ".join(queued)
 
-            # Tell Claude to continue; its memory is already in `conversation`
             conversation.append({
                 "role": "user",
                 "content": (
-                    f"Step {step} approved. Continue with step {step + 1}. "
-                    f"Steps remaining: {session.auto_max_steps - step}. "
-                    "Execute the next logical action based on what you've found so far."
+                    f"Step {step} APPROVED. Now execute EXACTLY what you proposed above — nothing more, nothing less. "
+                    f"Do not run any additional tools beyond what you described in your proposal. "
+                    f"After execution, provide a brief summary of the results and what you found."
                     + extra_context
                 ),
             })
+
+            step_tool_calls: list[dict] = []
+            step_text_parts: list[str] = []
+
+            # Inner agentic loop — execute with tools
+            while True:
+                if not session.auto_mode:
+                    return
+
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    system=system,
+                    tools=self._get_tools_schema(),
+                    messages=conversation,
+                )
+
+                if not session.auto_mode:
+                    return
+
+                has_tool_use = any(b.type == "tool_use" for b in response.content)
+
+                for block in response.content:
+                    if block.type == "text" and block.text.strip():
+                        step_text_parts.append(block.text)
+
+                if not has_tool_use:
+                    break
+
+                assistant_content = []
+                tool_results = []
+
+                for block in response.content:
+                    if block.type == "text":
+                        assistant_content.append({"type": "text", "text": block.text})
+                    elif block.type == "tool_use":
+                        if not session.auto_mode:
+                            return
+
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input,
+                        })
+
+                        if block.name == "execute_tool":
+                            tool_label = block.input.get("tool", "tool")
+                            raw = (block.input.get("parameters") or {}).get("__raw_args__", "")
+                            detail = f" {raw[:60]}" if raw else ""
+                        elif block.name == "execute_bash":
+                            tool_label = "bash"
+                            detail = f": {block.input.get('command', '')[:80]}"
+                        elif block.name == "record_finding":
+                            tool_label = "record_finding"
+                            detail = f": [{block.input.get('severity','?').upper()}] {block.input.get('title','')}"
+                        else:
+                            tool_label = block.name
+                            detail = ""
+
+                        await _status(f"Step {step}: Running {tool_label}{detail}…")
+
+                        result = await self._execute_tool_call(block.name, block.input)
+
+                        if not session.auto_mode:
+                            return
+
+                        await _status(f"Step {step}: {tool_label} finished — analysing…")
+
+                        step_tool_calls.append({
+                            "tool": block.name,
+                            "input": block.input,
+                            "result_preview": result[:500],
+                        })
+
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        })
+
+                conversation.append({"role": "assistant", "content": assistant_content})
+                conversation.append({"role": "user", "content": tool_results})
+            # ── End execution loop ─────────────────────────────────────────
+
+            # Add Claude's summary to conversation
+            if step_text_parts:
+                final_text = "\n\n".join(step_text_parts)
+                conversation.append({"role": "assistant", "content": final_text})
+
+            summary = "\n\n".join(step_text_parts) if step_text_parts else "(no summary)"
+
+            # Broadcast completion with tool call results
+            await self.broadcast({
+                "type": "auto_step_complete",
+                "step_id": step_id,
+                "step_number": step,
+                "summary": summary,
+                "tool_calls": step_tool_calls,
+                "timestamp": _ts(),
+            })
+
+            await _status(f"Step {step}: Complete")
+
+            # Prompt Claude to propose the next step (no tools again)
+            if session.auto_mode and step < session.auto_max_steps:
+                conversation.append({
+                    "role": "user",
+                    "content": (
+                        f"Step {step} execution is complete. "
+                        f"Steps remaining: {session.auto_max_steps - step}. "
+                        f"You are back in PROPOSE mode — you do NOT have tools right now. "
+                        f"Based on what you've found so far, propose the next step. "
+                        f"State the exact tool and arguments you want to run, and why."
+                    ),
+                })
 
         await _status(
             f"Autonomous testing completed — {session.auto_current_step} step(s) executed"
