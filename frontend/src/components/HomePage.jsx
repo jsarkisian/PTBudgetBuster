@@ -15,7 +15,7 @@ export default function HomePage({ sessions, currentUser, logoUrl, onNewSession,
           ? <img src={logoUrl} alt="Logo" className="h-20 w-20 object-contain mb-4 rounded-xl" />
           : <div className="text-7xl mb-4">🛡️</div>
         }
-        <h1 className="text-3xl font-bold text-gray-100 tracking-tight mb-2">PentestMCP</h1>
+        <h1 className="text-3xl font-bold text-gray-100 tracking-tight mb-2">MCP-PT</h1>
         <p className="text-gray-500 text-sm">AI-powered penetration testing platform</p>
       </div>
 

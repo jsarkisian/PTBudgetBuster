@@ -13,7 +13,7 @@ export default function Header({ health, connected, session, currentUser, onLogo
             ? <img src={logoUrl} alt="Logo" className="h-7 w-7 object-contain rounded" />
             : <span className="text-lg">🛡️</span>
           }
-          <h1 className="text-sm font-bold text-gray-100 tracking-wide">PentestMCP</h1>
+          <h1 className="text-sm font-bold text-gray-100 tracking-wide">MCP-PT</h1>
         </button>
         {session && (
           <>
