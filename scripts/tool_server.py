@@ -460,7 +460,7 @@ async def list_files(directory: str = ""):
     dir_path = Path(DATA_DIR) / directory
     if not dir_path.exists():
         return {"files": []}
-    
+
     files = []
     for item in dir_path.iterdir():
         files.append({
@@ -469,6 +469,64 @@ async def list_files(directory: str = ""):
             "size": item.stat().st_size if item.is_file() else 0,
         })
     return {"files": files}
+
+
+@app.get("/workspace")
+async def get_workspace():
+    """Return non-empty entries from the data dir with recursive file lists.
+
+    Empty task directories are excluded. The sessions/ sub-directory is hidden.
+    Returned paths are relative to /opt/pentest so they work with /images/.
+    """
+    data_dir = Path(DATA_DIR)
+    IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+    SKIP_NAMES = {"sessions"}
+
+    def file_entry(f: Path) -> dict:
+        stat = f.stat()
+        try:
+            rel = str(f.relative_to("/opt/pentest"))
+        except ValueError:
+            rel = str(f)
+        return {
+            "name": f.name,
+            "path": rel,
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "is_image": f.suffix.lower() in IMAGE_EXTS,
+        }
+
+    task_dirs = []
+    loose_files = []
+
+    if not data_dir.exists():
+        return {"task_dirs": [], "loose_files": []}
+
+    for item in sorted(data_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if item.name in SKIP_NAMES:
+            continue
+        if item.is_file():
+            loose_files.append(file_entry(item))
+        elif item.is_dir():
+            files = []
+            total_size = 0
+            latest_mtime = 0.0
+            for f in sorted(item.rglob("*"), key=lambda p: p.stat().st_mtime if p.is_file() else 0):
+                if f.is_file():
+                    stat = f.stat()
+                    files.append(file_entry(f))
+                    total_size += stat.st_size
+                    latest_mtime = max(latest_mtime, stat.st_mtime)
+            if files:
+                task_dirs.append({
+                    "name": item.name,
+                    "file_count": len(files),
+                    "total_size": total_size,
+                    "modified": datetime.fromtimestamp(latest_mtime).isoformat(),
+                    "files": files,
+                })
+
+    return {"task_dirs": task_dirs, "loose_files": loose_files}
 
 
 @app.websocket("/ws/task/{task_id}")

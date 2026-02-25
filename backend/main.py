@@ -676,6 +676,31 @@ async def approve_step(req: ApprovalResponse):
     
     raise HTTPException(404, "No pending approval found")
 
+class ScopeApprovalRequest(BaseModel):
+    session_id: str
+    approval_id: str
+    approved: bool
+
+@app.post("/api/scope/approve")
+async def approve_scope_addition(req: ScopeApprovalRequest, current_user=Depends(get_optional_user)):
+    """Approve or reject a pending scope addition proposed by the AI."""
+    session = session_mgr.get(req.session_id)
+    if not session:
+        raise HTTPException(404, "Session not found")
+    if req.approval_id not in session.pending_scope_approvals:
+        raise HTTPException(404, "No pending scope approval with that ID")
+
+    session.pending_scope_approvals[req.approval_id]["approved"] = req.approved
+    session.pending_scope_approvals[req.approval_id]["resolved"] = True
+
+    await broadcast(req.session_id, {
+        "type": "scope_addition_decision",
+        "approval_id": req.approval_id,
+        "approved": req.approved,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"status": "approved" if req.approved else "rejected"}
+
 @app.post("/api/autonomous/message")
 async def send_auto_message(req: AutoMessageRequest, current_user=Depends(get_current_user)):
     """Inject a user message into the running autonomous session."""
@@ -717,6 +742,77 @@ async def stop_autonomous(req: dict):
 # ──────────────────────────────────────────────
 #  File management
 # ──────────────────────────────────────────────
+
+@app.get("/api/workspace")
+async def get_workspace(current_user=Depends(get_optional_user)):
+    """Return workspace files organized by engagement session.
+
+    Maps task directories (UUID names) to the tool run and session that created
+    them.  Empty task directories are excluded.  Internal session data is hidden.
+    """
+    # Build task_id -> {tool, session_id, session_name, timestamp} from sessions
+    task_map: dict = {}
+    for session in session_mgr.list_all():
+        for event in session.events:
+            if event["type"] in ("tool_exec", "bash_exec"):
+                task_id = event["data"].get("task_id")
+                if task_id and task_id not in task_map:
+                    tool = event["data"].get("tool", "bash")
+                    if tool == "bash":
+                        cmd = event["data"].get("command", "")
+                        # Use the binary name as the label
+                        label = cmd.split()[0].split("/")[-1] if cmd else "bash"
+                    else:
+                        label = tool
+                    task_map[task_id] = {
+                        "tool": tool,
+                        "label": label,
+                        "session_id": session.id,
+                        "session_name": session.name,
+                        "timestamp": event.get("timestamp"),
+                    }
+
+    async with get_toolbox_client() as client:
+        resp = await client.get("/workspace")
+        raw = resp.json()
+
+    sessions_map: dict = {}
+    unknown_dirs = []
+
+    for td in raw.get("task_dirs", []):
+        name = td["name"]
+        info = task_map.get(name)
+        if info:
+            sid = info["session_id"]
+            if sid not in sessions_map:
+                sessions_map[sid] = {
+                    "id": sid,
+                    "name": info["session_name"],
+                    "runs": [],
+                }
+            sessions_map[sid]["runs"].append({
+                "task_id": name,
+                "tool": info["tool"],
+                "label": info["label"],
+                "timestamp": info["timestamp"],
+                "file_count": td["file_count"],
+                "total_size": td["total_size"],
+                "modified": td["modified"],
+                "files": td["files"],
+            })
+        else:
+            unknown_dirs.append(td)
+
+    # Sort each session's runs chronologically
+    for sess in sessions_map.values():
+        sess["runs"].sort(key=lambda r: r["timestamp"] or "")
+
+    return {
+        "sessions": sorted(sessions_map.values(), key=lambda s: s["name"]),
+        "loose_files": raw.get("loose_files", []),
+        "unknown_dirs": unknown_dirs,
+    }
+
 
 @app.get("/api/files")
 async def list_files(directory: str = ""):
