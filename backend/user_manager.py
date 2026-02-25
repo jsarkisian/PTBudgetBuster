@@ -177,12 +177,18 @@ class UserManager:
             )
             self.users["admin"] = admin
             self._save()
-            print("==================================================")
-            print("  ADMIN CREDENTIALS (first run)")
-            print("  Username: admin")
-            print(f"  Password: {generated_password}")
-            print("  You will be required to change this on first login.")
-            print("==================================================")
+            import sys
+            msg = (
+                "\n"
+                "==================================================\n"
+                "  ADMIN CREDENTIALS (first run)\n"
+                "  Username: admin\n"
+                f"  Password: {generated_password}\n"
+                "  You will be required to change this on first login.\n"
+                "==================================================\n"
+            )
+            sys.stderr.write(msg)
+            sys.stderr.flush()
 
     def _sync_authorized_keys(self):
         """Rebuild the authorized_keys file from all user SSH keys."""
