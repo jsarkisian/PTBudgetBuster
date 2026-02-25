@@ -61,11 +61,11 @@ docker compose build
 docker compose up -d
 ```
 
-Open http://localhost:3000 and log in with the default credentials: **admin** / **changeme**
+Open http://localhost:3000. Admin credentials are generated on first startup and displayed in the terminal output. If using manual setup, check `docker compose logs backend` for the generated credentials.
 
 ### First Engagement
 
-1. Log in with **admin** / **changeme**
+1. Log in with the admin credentials shown in your terminal (or run `docker compose logs backend` to find them)
 2. Click **New Engagement**
 3. Enter a name, target scope (domains, IPs, CIDR ranges -- one per line), and optional client and notes
 4. Start chatting with the AI or use the Tools tab to run scans manually
@@ -205,7 +205,7 @@ One-click session export as a ZIP archive containing:
 ### Users and Roles
 
 - Three roles: **admin**, **operator**, **viewer**
-- Default admin account: **admin** / **changeme** (change this immediately)
+- A random admin password is generated on first startup and printed to the backend logs. You must change it on first login.
 - Admin can create, edit, and delete users, and assign roles
 - JWT-based authentication with 24-hour token expiry
 
@@ -292,7 +292,7 @@ server {
 - **Always use SSL in production** -- the platform handles sensitive security data
 - **Restrict access** via firewall or VPN (Tailscale recommended)
 - **Change JWT_SECRET** to a strong random string
-- **Change the default admin password** immediately after first login
+- **Admin password is randomly generated on first boot** and must be changed on first login
 - **API key safety** -- the Anthropic key is stored only in the backend container environment
 - **Network isolation** -- the toolbox container has outbound internet but no direct inbound access
 
