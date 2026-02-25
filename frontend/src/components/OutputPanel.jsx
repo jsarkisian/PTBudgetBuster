@@ -201,7 +201,7 @@ const TOOL_DESCRIPTIONS = {
 
 // ── Main component ─────────────────────────────────────────────────────
 
-export default function OutputPanel({ outputs, onClear }) {
+export default function OutputPanel({ outputs, onClear, onApproveScopeAddition }) {
   const scrollRef = useRef(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -217,10 +217,12 @@ export default function OutputPanel({ outputs, onClear }) {
 
   const execCount = paired.filter(p => p.type === 'execution').length;
 
+  const ALWAYS_SHOW_TYPES = new Set(['auto_status', 'scope_updated', 'scope_addition_pending']);
+
   const filtered = filter === 'all'
     ? paired
     : paired.filter(o => {
-        if (o.type === 'auto_status') return true;
+        if (ALWAYS_SHOW_TYPES.has(o.type)) return true;
         const src = o.start?.source || o.result?.source || '';
         return src === filter;
       });
@@ -271,6 +273,9 @@ export default function OutputPanel({ outputs, onClear }) {
             if (entry.type === 'scope_updated') {
               return <ScopeUpdatedCard key={entry.id || i} entry={entry} />;
             }
+            if (entry.type === 'scope_addition_pending') {
+              return <ScopePendingCard key={entry.id || i} entry={entry} onApprove={onApproveScopeAddition} />;
+            }
             if (entry.type === 'execution') {
               return (
                 <ExecutionCard
@@ -288,6 +293,81 @@ export default function OutputPanel({ outputs, onClear }) {
       {lightbox && (
         <Lightbox src={lightbox.src} filename={lightbox.filename} onClose={() => setLightbox(null)} />
       )}
+    </div>
+  );
+}
+
+// ── Scope addition approval card ────────────────────────────────────────
+
+function ScopePendingCard({ entry, onApprove }) {
+  const { approval_id, hosts = [], reason, timestamp, decision } = entry;
+  const [loading, setLoading] = useState(false);
+
+  const handleDecision = async (approved) => {
+    setLoading(true);
+    try {
+      await onApprove(approval_id, approved);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const borderCls = decision === 'approved'
+    ? 'border-accent-green/25'
+    : decision === 'rejected'
+      ? 'border-accent-red/25'
+      : 'border-yellow-500/40';
+
+  return (
+    <div className={`border rounded overflow-hidden ${borderCls}`}>
+      <div className="flex items-center gap-2 px-3 py-2 bg-dark-800">
+        {!decision && <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse shrink-0" />}
+        {decision === 'approved' && <span className="text-accent-green text-xs font-bold shrink-0">✓</span>}
+        {decision === 'rejected' && <span className="text-accent-red text-xs font-bold shrink-0">✗</span>}
+        <span className="text-[11px] font-semibold text-yellow-300 shrink-0">Scope addition pending</span>
+        <span className="text-[11px] text-gray-400 flex-1 truncate">
+          {hosts.length} host{hosts.length !== 1 ? 's' : ''} via {reason || 'discovery'}
+        </span>
+        <span className="text-gray-600 text-[10px] tabular-nums shrink-0">
+          {timestamp ? new Date(timestamp).toLocaleTimeString() : ''}
+        </span>
+      </div>
+      <div className="border-t border-dark-700 px-3 py-2 space-y-2">
+        <div>
+          <div className="text-[10px] text-gray-600 mb-1 font-semibold uppercase tracking-wider">Proposed hosts</div>
+          <div className="flex flex-wrap gap-1">
+            {hosts.map((h, i) => (
+              <span key={i} className="font-mono text-[11px] bg-yellow-500/10 text-yellow-300 px-2 py-0.5 rounded">
+                {h}
+              </span>
+            ))}
+          </div>
+        </div>
+        {!decision && (
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => handleDecision(true)}
+              disabled={loading}
+              className="btn-primary text-xs px-3 py-1.5 disabled:opacity-50"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => handleDecision(false)}
+              disabled={loading}
+              className="btn-ghost text-xs px-3 py-1.5 text-accent-red border border-accent-red/30 disabled:opacity-50"
+            >
+              Reject
+            </button>
+          </div>
+        )}
+        {decision === 'approved' && (
+          <div className="text-[11px] text-accent-green">Added to scope</div>
+        )}
+        {decision === 'rejected' && (
+          <div className="text-[11px] text-accent-red">Rejected — not added to scope</div>
+        )}
+      </div>
     </div>
   );
 }

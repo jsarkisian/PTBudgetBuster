@@ -183,6 +183,21 @@ export default function App() {
           }]);
         }
         break;
+      case 'scope_addition_pending':
+        setOutputs(prev => [...prev, {
+          id: `scope-pending-${event.approval_id}`, type: 'scope_addition_pending',
+          approval_id: event.approval_id, hosts: event.hosts,
+          reason: event.reason, timestamp: event.timestamp,
+          decision: null,
+        }]);
+        break;
+      case 'scope_addition_decision':
+        setOutputs(prev => prev.map(o =>
+          o.type === 'scope_addition_pending' && o.approval_id === event.approval_id
+            ? { ...o, decision: event.approved ? 'approved' : 'rejected' }
+            : o
+        ));
+        break;
       case 'presence_update':
         setOnlineUsers(event.users || []);
         break;
@@ -350,6 +365,11 @@ export default function App() {
     }
   };
 
+  const handleApproveScopeAddition = async (approvalId, approved) => {
+    if (!activeSession) return;
+    await api.approveScopeAddition({ session_id: activeSession.id, approval_id: approvalId, approved });
+  };
+
   const handleLogout = () => {
     setToken(null); setCurrentUser(null); setActiveSession(null);
     setMessages([]); setOutputs([]);
@@ -455,7 +475,7 @@ export default function App() {
                     title="Drag to resize"
                   />
                   <div className="shrink-0 overflow-hidden" style={{ width: `${outputWidth}%` }}>
-                    <OutputPanel outputs={outputs} onClear={() => setOutputs([])} />
+                    <OutputPanel outputs={outputs} onClear={() => setOutputs([])} onApproveScopeAddition={handleApproveScopeAddition} />
                   </div>
                 </>
               )}
