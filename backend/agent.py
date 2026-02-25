@@ -127,8 +127,14 @@ SYSTEM_PROMPT = """You are an expert penetration tester assistant operating with
 - You provide clear explanations of what each tool does and what results mean
 - You flag potential vulnerabilities with severity ratings
 
-## Tool Reference
-Use `execute_tool` with the tool name and `__raw_args__` for the full argument string. Use `execute_bash` for piped commands or tool chaining. The actual flags for each tool are listed below — use ONLY these exact flags, do not invent flags.
+## Tool Reference — CRITICAL
+When calling `execute_tool`, you MUST pass parameters as `{"__raw_args__": "<flags>"}`. The `__raw_args__` value is the exact CLI argument string — the same flags you would type after the binary name on the command line. Do NOT use any other parameter format. Do NOT invent flags. Do NOT use triple dashes (---). Use ONLY the exact flags listed below for each tool.
+
+**Correct example**: `execute_tool(tool="subfinder", parameters={"__raw_args__": "-d example.com -silent"})`
+**WRONG**: `execute_tool(tool="subfinder", parameters={"domain": "example.com"})` — this will fail
+**WRONG**: `execute_tool(tool="subfinder", parameters={"---domain": "example.com"})` — this will fail
+
+Use `execute_bash` for piped commands or tool chaining (e.g. `echo "example.com" | subfinder -silent | httpx -sc -title -silent`).
 
 ### Subdomain & DNS Enumeration
 
@@ -505,17 +511,31 @@ class PentestAgent:
         return [
             {
                 "name": "execute_tool",
-                "description": "Execute a security testing tool. Available tools: subfinder, httpx, nuclei, naabu, nmap, katana, dnsx, tlsx, ffuf, gowitness, waybackurls, whatweb, wafw00f, sslscan, nikto, masscan.",
+                "description": (
+                    "Execute a security testing tool. Pass the tool name and its CLI arguments as a single string in __raw_args__. "
+                    "Available tools: subfinder, httpx, nuclei, naabu, nmap, katana, dnsx, tlsx, ffuf, gowitness, "
+                    "waybackurls, whatweb, wafw00f, sslscan, nikto, masscan, gobuster, sqlmap, hydra, wpscan, "
+                    "enum4linux, smbclient, smbmap, dnsrecon, theharvester, amass, gospider, gau, crackmapexec, "
+                    "responder, nbtscan, snmpwalk, fierce, wfuzz, testssl, uncover, naabu. "
+                    "Example: tool='subfinder', parameters={'__raw_args__': '-d example.com -silent'}"
+                ),
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "tool": {
                             "type": "string",
-                            "description": "Name of the tool to execute",
+                            "description": "Name of the tool to execute (e.g. 'subfinder', 'nmap', 'httpx')",
                         },
                         "parameters": {
                             "type": "object",
-                            "description": "Tool-specific parameters as key-value pairs",
+                            "description": "Must contain '__raw_args__' key with the full CLI argument string. Example: {'__raw_args__': '-d example.com -silent'}. Do NOT use triple dashes or invent flags — use exactly the flags shown in the Tool Reference.",
+                            "properties": {
+                                "__raw_args__": {
+                                    "type": "string",
+                                    "description": "The complete CLI argument string exactly as you would type it after the tool binary. Example: '-d example.com -silent' for subfinder, '-sV -p 80,443 target.com' for nmap.",
+                                },
+                            },
+                            "required": ["__raw_args__"],
                         },
                     },
                     "required": ["tool", "parameters"],
