@@ -42,6 +42,7 @@ export default function App() {
   const [logoUrl, setLogoUrl] = useState(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
+  const [toolResultCount, setToolResultCount] = useState(0);
   const chatAbortRef = React.useRef(null);
   const [clients, setClients] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -101,6 +102,7 @@ export default function App() {
           result: event.result, source: event.source || 'manual',
           timestamp: event.timestamp,
         }]);
+        setToolResultCount(n => n + 1);
         break;
       case 'new_finding':
         setFindings(prev => [...prev, event.finding]);
@@ -447,10 +449,10 @@ export default function App() {
                   <ClientsPanel onClientsChange={setClients} />
                 )}
                 {activeTab === 'screenshots' && (
-                  <ScreenshotGallery />
+                  <ScreenshotGallery toolResultCount={toolResultCount} />
                 )}
                 {activeTab === 'files' && (
-                  <FileManager />
+                  <FileManager toolResultCount={toolResultCount} />
                 )}
                 {activeTab === 'admin' && (
                   <AdminPanel currentUser={currentUser} />

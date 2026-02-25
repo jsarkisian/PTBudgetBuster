@@ -219,11 +219,22 @@ async def run_tool_async(task_id: str, cmd: list, stdin_data: str = None,
         task["error"] = stderr.decode(errors="replace")
         task["return_code"] = process.returncode
         task["status"] = "completed" if process.returncode == 0 else "failed"
-        
+
+        # Persist stdout/stderr to the task directory so they appear in the Files tab
+        if cwd:
+            task_path = Path(cwd)
+            try:
+                if task["output"].strip():
+                    (task_path / "output.txt").write_text(task["output"])
+                if task["error"].strip():
+                    (task_path / "stderr.txt").write_text(task["error"])
+            except Exception:
+                pass
+
     except Exception as e:
         task["status"] = "error"
         task["error"] = str(e)
-    
+
     task["finished_at"] = datetime.utcnow().isoformat()
 
 

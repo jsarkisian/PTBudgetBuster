@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { Lightbox, ScreenshotThumb } from './ImageUtils';
 
-export default function ScreenshotGallery() {
+export default function ScreenshotGallery({ toolResultCount = 0 }) {
   const [screenshots, setScreenshots] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('');
@@ -22,6 +22,11 @@ export default function ScreenshotGallery() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // Reload whenever a tool finishes — screenshots may have been created
+  useEffect(() => {
+    if (toolResultCount > 0) load();
+  }, [toolResultCount]);
 
   const handleDelete = async (path) => {
     setDeleteError(null);

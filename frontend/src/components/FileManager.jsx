@@ -308,7 +308,7 @@ function SessionSection({ session, selectedFile, onSelectFile, onDeleteFile }) {
 
 // ── Main component ──────────────────────────────────────────────────────
 
-export default function FileManager() {
+export default function FileManager({ toolResultCount = 0 }) {
   const [workspace, setWorkspace] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -324,6 +324,11 @@ export default function FileManager() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reload workspace whenever a tool finishes running
+  useEffect(() => {
+    if (toolResultCount > 0) load();
+  }, [toolResultCount, load]);
 
   const handleDeleteFile = useCallback(async (file) => {
     setDeleteError(null);

@@ -460,6 +460,7 @@ uncover -q "http.title:\"example\"" -e shodan -silent
 ```
 
 ## Rules
+0. **CRITICAL — NEVER SIMULATE TOOLS**: You MUST call `execute_tool` or `execute_bash` to actually run every security tool. NEVER write out what a tool's output might look like. NEVER describe, fabricate, or pretend to run a tool. If the user asks you to run subfinder, nmap, httpx, or any other tool, you MUST call the appropriate tool function and wait for the real output. Generating fake tool output is a critical failure. If you cannot run a tool for a valid reason, explicitly say so — do NOT invent results.
 1. ONLY run the EXACT tool(s) the user asks for. If the user says "run subfinder on X", run ONLY subfinder on X and NOTHING else.
 2. NEVER run additional tools beyond what was explicitly requested. Do NOT chain tools unless the user specifically asks you to.
 3. NEVER test targets outside the defined scope.
