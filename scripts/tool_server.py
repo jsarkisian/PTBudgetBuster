@@ -94,18 +94,12 @@ def _find_primary_target(tool_def: dict):
     return None, False
 
 
-def _inject_screenshot_path(cmd: list, task_dir: Path) -> list:
-    """If an httpx command uses -screenshot/-ss but has no -screenshot-path, inject one
-    so screenshots land in the task-specific directory instead of a global folder."""
-    if not any(part in ('/root/go/bin/httpx', 'httpx') for part in cmd):
-        return cmd
-    if '-screenshot' not in cmd and '-ss' not in cmd:
-        return cmd
-    if '-screenshot-path' in cmd:
-        return cmd
-    screenshots_dir = task_dir / 'screenshots'
-    screenshots_dir.mkdir(parents=True, exist_ok=True)
-    return cmd + ['-screenshot-path', str(screenshots_dir)]
+def _uses_screenshot(cmd: list) -> bool:
+    """Return True if the command is httpx with screenshot enabled."""
+    return (
+        any(part in ('/root/go/bin/httpx', 'httpx') for part in cmd)
+        and ('-screenshot' in cmd or '-ss' in cmd)
+    )
 
 
 def build_command(tool_name: str, parameters: dict) -> list:
@@ -180,12 +174,12 @@ def build_command(tool_name: str, parameters: dict) -> list:
     return cmd_parts
 
 
-async def run_tool_async(task_id: str, cmd: list, stdin_data: str = None, 
-                         timeout: int = 300, use_shell: bool = False):
+async def run_tool_async(task_id: str, cmd: list, stdin_data: str = None,
+                         timeout: int = 300, use_shell: bool = False, cwd: str = None):
     """Execute a tool asynchronously and track its output."""
     task = running_tasks[task_id]
     task["status"] = "running"
-    
+
     try:
         if use_shell:
             cmd_str = cmd[0] if len(cmd) == 1 else " ".join(cmd)
@@ -194,6 +188,7 @@ async def run_tool_async(task_id: str, cmd: list, stdin_data: str = None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 stdin=asyncio.subprocess.PIPE if stdin_data else None,
+                cwd=cwd,
             )
         else:
             process = await asyncio.create_subprocess_exec(
@@ -201,6 +196,7 @@ async def run_tool_async(task_id: str, cmd: list, stdin_data: str = None,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 stdin=asyncio.subprocess.PIPE if stdin_data else None,
+                cwd=cwd,
             )
         
         task["pid"] = process.pid
@@ -277,7 +273,6 @@ async def execute_tool(request: ToolRequest):
         use_shell = False
     else:
         cmd = build_command(request.tool, request.parameters)
-        cmd = _inject_screenshot_path(cmd, task_dir)
         use_shell = False
 
     # Initialize task tracking
@@ -293,10 +288,11 @@ async def execute_tool(request: ToolRequest):
         "pid": None,
         "finished_at": None,
     }
-    
-    # Run asynchronously
+
+    # Run asynchronously — always set cwd to task_dir so tool-generated files
+    # (e.g. httpx screenshots at output/screenshot/) land in the task directory.
     asyncio.create_task(
-        run_tool_async(task_id, cmd, stdin_data, request.timeout, use_shell)
+        run_tool_async(task_id, cmd, stdin_data, request.timeout, use_shell, cwd=str(task_dir))
     )
     
     return {"task_id": task_id, "command": running_tasks[task_id]["command"], "status": "started"}
@@ -324,7 +320,6 @@ async def execute_tool_sync(request: ToolRequest):
         cmd = ["/bin/bash", "-c", request.parameters.get("command", "")]
     else:
         cmd = build_command(request.tool, request.parameters)
-        cmd = _inject_screenshot_path(cmd, task_dir)
 
     running_tasks[task_id] = {
         "task_id": task_id,
@@ -338,8 +333,8 @@ async def execute_tool_sync(request: ToolRequest):
         "pid": None,
         "finished_at": None,
     }
-    
-    await run_tool_async(task_id, cmd, stdin_data, request.timeout, False)
+
+    await run_tool_async(task_id, cmd, stdin_data, request.timeout, False, cwd=str(task_dir))
     
     return running_tasks[task_id]
 

@@ -471,7 +471,7 @@ uncover -q "http.title:\"example\"" -e shodan -silent
 9. **SCOPE EXPANSION**: After any tool that discovers new subdomains or hosts (subfinder, amass, dnsx, katana, gobuster DNS mode, dnsrecon, theharvester, gospider, gau, etc.), call `add_to_scope` with the discovered hosts BEFORE presenting results. Only skip clearly out-of-scope or irrelevant hosts.
 
 ## Platform Notes
-- **Screenshots**: Use `httpx -ss` flag (ProjectDiscovery httpx). Do NOT specify `-screenshot-path` — the platform injects a task-specific path automatically. Only take screenshots when the user explicitly asks for them.
+- **Screenshots**: Use `httpx -ss` flag (ProjectDiscovery httpx, at `/root/go/bin/httpx`). Do NOT specify any screenshot path flag — the platform sets the working directory automatically and screenshots are saved and displayed per-task. Only take screenshots when the user explicitly asks for them. Example: `execute_bash` with `/root/go/bin/httpx -l /tmp/hosts.txt -ss -silent` or `execute_tool` with httpx and `__raw_args__: "-l /tmp/hosts.txt -ss -silent"`.
 - **Piped commands**: Use `execute_bash` for pipes. E.g.: `echo "example.com" | subfinder -silent | httpx -sc -title -silent`
 - **waybackurls / gau**: These read from stdin, use bash: `echo "example.com" | waybackurls`
 
@@ -740,7 +740,46 @@ class PentestAgent:
         elif tool_name == "add_to_scope":
             hosts = tool_input.get("hosts", [])
             reason = tool_input.get("reason", "tool discovery")
-            added = self.session.add_to_scope(hosts)
+
+            # Filter out hosts already in scope — only ask about genuinely new ones
+            existing = {h.strip().lower() for h in self.session.target_scope}
+            new_hosts = [h.strip() for h in hosts if h.strip() and h.strip().lower() not in existing]
+            if not new_hosts:
+                return f"No new hosts to add — all {len(hosts)} provided host(s) were already in scope."
+
+            # Create a pending approval and wait for the tester to decide
+            approval_id = str(uuid.uuid4())[:8]
+            self.session.pending_scope_approvals[approval_id] = {
+                "approval_id": approval_id,
+                "hosts": new_hosts,
+                "reason": reason,
+                "resolved": False,
+                "approved": None,
+            }
+
+            await self.broadcast({
+                "type": "scope_addition_pending",
+                "approval_id": approval_id,
+                "hosts": new_hosts,
+                "reason": reason,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+            # Poll until resolved or timeout (90 s)
+            timeout, elapsed = 90, 0
+            while not self.session.pending_scope_approvals[approval_id]["resolved"] and elapsed < timeout:
+                await asyncio.sleep(1)
+                elapsed += 1
+
+            decision = self.session.pending_scope_approvals.pop(approval_id, {})
+
+            if elapsed >= timeout:
+                return f"Scope addition timed out waiting for tester approval — skipping {len(new_hosts)} host(s)."
+
+            if not decision.get("approved"):
+                return f"Tester rejected scope addition of {len(new_hosts)} host(s): {', '.join(new_hosts)}."
+
+            added = self.session.add_to_scope(new_hosts)
             if added:
                 await self.broadcast({
                     "type": "scope_updated",
@@ -749,8 +788,8 @@ class PentestAgent:
                     "reason": reason,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-                return f"Added {len(added)} new host(s) to scope ({reason}): {', '.join(added)}"
-            return f"No new hosts to add — all {len(hosts)} provided host(s) were already in scope."
+                return f"Tester approved: added {len(added)} host(s) to scope ({reason}): {', '.join(added)}"
+            return "All proposed hosts were already in scope."
 
         return "Unknown tool"
     
