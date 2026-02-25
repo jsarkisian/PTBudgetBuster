@@ -125,6 +125,7 @@ export default function App() {
           description: event.description, toolCalls: event.tool_calls,
         });
         setAutoHistory(prev => [...prev, stepEntry]);
+        setActiveSession(prev => prev ? { ...prev, auto_current_step: event.step_number } : prev);
         break;
       }
       case 'auto_step_decision':
@@ -144,7 +145,14 @@ export default function App() {
         break;
       case 'auto_mode_changed':
         if (event.enabled) { setAutoHistory([]); setAutoCurrentStatus(null); }
-        else { setAutoCurrentStatus(null); }
+        else { setAutoCurrentStatus(null); setPendingApproval(null); }
+        setActiveSession(prev => prev ? {
+          ...prev,
+          auto_mode: event.enabled,
+          auto_objective: event.objective || prev.auto_objective,
+          auto_max_steps: event.max_steps || prev.auto_max_steps,
+          auto_current_step: event.enabled ? 0 : prev.auto_current_step,
+        } : prev);
         setOutputs(prev => [...prev, {
           id: `auto-${Date.now()}`, type: 'auto_status',
           message: event.enabled ? `Autonomous mode started: ${event.objective || ''}` : 'Autonomous mode stopped',
@@ -282,6 +290,28 @@ export default function App() {
           }
         });
         setOutputs(restored);
+      }
+
+      // Restore autonomous mode state if it's running
+      if (data.auto_mode) {
+        // Restore pending approval if one exists
+        if (data.auto_pending_approval && !data.auto_pending_approval.resolved) {
+          setPendingApproval({
+            stepId: data.auto_pending_approval.step_id,
+            stepNumber: data.auto_pending_approval.step_number,
+            description: data.auto_pending_approval.description,
+            toolCalls: data.auto_pending_approval.tool_calls,
+          });
+          // Show the pending step in history
+          setAutoHistory([{
+            type: 'step',
+            stepId: data.auto_pending_approval.step_id,
+            stepNumber: data.auto_pending_approval.step_number,
+            description: data.auto_pending_approval.description,
+            toolCalls: data.auto_pending_approval.tool_calls || [],
+            status: 'pending',
+          }]);
+        }
       }
     }).catch(() => {});
   }, [activeSession?.id]);

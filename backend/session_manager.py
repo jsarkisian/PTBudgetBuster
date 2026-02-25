@@ -131,6 +131,9 @@ CURRENT FINDINGS:
             "events": self.events,
             "auto_mode": self.auto_mode,
             "auto_objective": self.auto_objective,
+            "auto_current_step": self.auto_current_step,
+            "auto_max_steps": self.auto_max_steps,
+            "auto_pending_approval": self.auto_pending_approval,
         }
     
     def to_full_dict(self) -> dict:
