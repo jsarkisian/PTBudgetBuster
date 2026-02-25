@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pentest MCP Backend Server
+MCP-PT Backend Server
 Orchestrates tool execution, AI agent, and session management.
 """
 
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="Pentest MCP Backend", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="MCP-PT Backend", version="1.0.0", lifespan=lifespan)
 
 origins = [o.strip() for o in settings.allowed_origins.split(",")]
 app.add_middleware(

@@ -1,4 +1,4 @@
-# Tool definitions for the pentest MCP server
+# Tool definitions for the MCP-PT server
 # Each tool has a name, description, binary path, and parameter schema
 
 tools:

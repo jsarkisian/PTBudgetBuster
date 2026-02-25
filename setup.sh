@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🛡️  PentestMCP Setup"
+echo "🛡️  MCP-PT Setup"
 echo "===================="
 echo ""
 
@@ -63,7 +63,7 @@ fi
 
 echo ""
 echo "════════════════════════════════════════"
-echo "  PentestMCP is ready!"
+echo "  MCP-PT is ready!"
 echo "  Open: http://localhost:3000"
 echo "════════════════════════════════════════"
 echo ""
