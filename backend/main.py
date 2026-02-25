@@ -76,6 +76,40 @@ client_mgr = ClientManager()
 schedule_mgr = ScheduleManager()
 toolbox_url = f"http://{settings.toolbox_host}:{settings.toolbox_port}"
 
+
+@app.middleware("http")
+async def check_password_change_required(request: Request, call_next):
+    """Block API access (except login and change-password) if user must change password."""
+    path = request.url.path
+    exempt_paths = [
+        "/api/auth/login",
+        "/api/auth/change-password",
+        "/api/health",
+        "/api/version",
+    ]
+    if any(path == p for p in exempt_paths):
+        return await call_next(request)
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        token_str = auth_header[7:]
+        try:
+            payload = jwt.decode(token_str, settings.jwt_secret, algorithms=["HS256"])
+            username = payload.get("sub")
+            if username:
+                user = user_mgr.get_user(username)
+                if user and user.must_change_password:
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Password change required"},
+                    )
+        except JWTError:
+            pass
+
+    return await call_next(request)
+
+
 # WebSocket presence per session: {session_id: [{ws, username, joined_at}]}
 ws_presence: dict[str, list[dict]] = {}
 
@@ -1045,6 +1079,7 @@ async def login(req: LoginRequest):
     return {
         "token": token,
         "user": user.to_dict(),
+        "must_change_password": user.must_change_password,
     }
 
 @app.get("/api/auth/me")
