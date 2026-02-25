@@ -66,6 +66,21 @@ echo "════════════════════════�
 echo "  MCP-PT is ready!"
 echo "  Open: http://localhost:3000"
 echo "════════════════════════════════════════"
+
+# Show admin credentials if this is the first run
+admin_creds=$(docker compose logs backend 2>&1 | grep -A 4 "ADMIN CREDENTIALS" | grep "Password:" | head -1 | sed 's/.*Password: //')
+if [ -n "$admin_creds" ]; then
+    echo ""
+    echo "  Admin Credentials (first run only):"
+    echo "  ────────────────────────────────────"
+    echo "  Username: admin"
+    echo "  Password: $admin_creds"
+    echo ""
+    echo "  You will be required to change this"
+    echo "  password on first login."
+    echo "════════════════════════════════════════"
+fi
+
 echo ""
 echo "Useful commands:"
 echo "  docker compose logs -f        # View logs"
