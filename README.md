@@ -326,6 +326,20 @@ sudo ufw deny 8000
 # Tailscale traffic bypasses UFW by default
 ```
 
+**Exit node (route outbound traffic through a specific node):**
+
+To route all tool traffic through a Tailscale exit node, add to `.env`:
+
+```bash
+TAILSCALE_EXIT_NODE=my-exit-node
+```
+
+This is applied automatically during `./setup.sh`. The exit node must already be approved in your Tailscale admin console. To disconnect the exit node later:
+
+```bash
+sudo tailscale set --exit-node=
+```
+
 **Reaching tailnet targets with tools:**
 
 If you need to scan hosts that are only reachable via your tailnet, the toolbox container needs access to the host's network. Add `network_mode: host` to the toolbox service in `docker-compose.yml` (see the commented option in the file), or use Tailscale's subnet router feature to advertise routes.

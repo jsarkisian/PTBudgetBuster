@@ -35,6 +35,20 @@ else
     echo "ℹ  Tailscale not installed (optional — see README for setup)"
 fi
 
+# Apply Tailscale exit node if configured
+if [ -f .env ]; then
+    exit_node=$(grep -E "^TAILSCALE_EXIT_NODE=" .env 2>/dev/null | cut -d'=' -f2-)
+    if [ -n "$exit_node" ] && command -v tailscale &> /dev/null; then
+        echo ""
+        echo "🔀 Setting Tailscale exit node: $exit_node"
+        if sudo tailscale set --exit-node="$exit_node" 2>/dev/null; then
+            echo "✓ Exit node connected: $exit_node"
+        else
+            echo "⚠  Failed to set exit node. Verify the node name with: tailscale status"
+        fi
+    fi
+fi
+
 # Create .env if not exists
 if [ ! -f .env ]; then
     cp env.example .env
