@@ -288,6 +288,61 @@ server {
 }
 ```
 
+### Securing with Tailscale
+
+Tailscale provides zero-config VPN access to MCP-PT without exposing ports to the internet. Install it on the host OS (not inside Docker) to avoid VPN-induced scan accuracy issues with tools like nmap and masscan.
+
+**Install Tailscale on the host:**
+
+```bash
+# Install
+curl -fsSL https://tailscale.com/install.sh | sh
+
+# Authenticate and connect
+sudo tailscale up
+
+# Verify -- note your Tailscale IP (e.g., 100.x.y.z)
+tailscale ip -4
+```
+
+**Bind MCP-PT to your Tailscale IP only:**
+
+Update `.env` to restrict access to your tailnet:
+
+```bash
+# Replace 100.x.y.z with your Tailscale IP
+FRONTEND_PORT=100.x.y.z:3000
+BACKEND_PORT=100.x.y.z:8000
+ALLOWED_ORIGINS=http://100.x.y.z:3000
+```
+
+Then restart: `docker compose down && docker compose up -d`
+
+The GUI and API are now only reachable from devices on your tailnet.
+
+**Block public access (recommended):**
+
+```bash
+# Drop all traffic to ports 3000/8000 except from Tailscale
+sudo ufw deny 3000
+sudo ufw deny 8000
+# Tailscale traffic bypasses UFW by default
+```
+
+**Reaching tailnet targets with tools:**
+
+If you need to scan hosts that are only reachable via your tailnet, the toolbox container needs access to the host's network. Add `network_mode: host` to the toolbox service in `docker-compose.yml` (see the commented option in the file), or use Tailscale's subnet router feature to advertise routes.
+
+**Optional -- Tailscale Serve (automatic HTTPS):**
+
+```bash
+# Expose MCP-PT on your tailnet with automatic TLS
+sudo tailscale serve --bg 3000
+# Access at https://your-machine-name.tailnet-name.ts.net
+```
+
+This replaces the need for nginx + Let's Encrypt for tailnet-only access.
+
 ### Security Considerations
 
 - **Always use SSL in production** -- the platform handles sensitive security data

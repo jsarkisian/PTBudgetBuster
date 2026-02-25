@@ -19,6 +19,22 @@ fi
 
 echo "✓ Docker and Docker Compose found"
 
+# Check Tailscale
+if command -v tailscale &> /dev/null; then
+    ts_ip=$(tailscale ip -4 2>/dev/null)
+    if [ -n "$ts_ip" ]; then
+        echo "✓ Tailscale connected (IP: $ts_ip)"
+        echo "  To bind MCP-PT to your tailnet only, set in .env:"
+        echo "    FRONTEND_PORT=${ts_ip}:3000"
+        echo "    BACKEND_PORT=${ts_ip}:8000"
+        echo "    ALLOWED_ORIGINS=http://${ts_ip}:3000"
+    else
+        echo "⚠  Tailscale installed but not connected. Run: sudo tailscale up"
+    fi
+else
+    echo "ℹ  Tailscale not installed (optional — see README for setup)"
+fi
+
 # Create .env if not exists
 if [ ! -f .env ]; then
     cp env.example .env

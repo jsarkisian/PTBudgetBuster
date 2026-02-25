@@ -11,6 +11,10 @@ services:
       - tool-configs:/opt/pentest/configs
     networks:
       - mcp-pt-net
+    # To reach targets on a Tailscale tailnet, uncomment the line below
+    # and comment out the 'networks' block above. This gives the toolbox
+    # direct access to the host's network (including Tailscale).
+    # network_mode: "host"
     dns:
       - 8.8.8.8
       - 1.1.1.1
