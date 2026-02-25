@@ -36,6 +36,9 @@ class Session:
         self.auto_pending_approval: Optional[dict] = None
         self.auto_user_messages: list[str] = []  # messages queued from the chat input
 
+        # Scope addition approvals (not persisted)
+        self.pending_scope_approvals: dict[str, dict] = {}
+
         # Credential token store (in-memory only, never persisted)
         self._token_store: dict[str, str] = {}
         self._token_counter: int = 0
