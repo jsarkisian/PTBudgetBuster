@@ -40,12 +40,19 @@ export default function App() {
   const [editingSession, setEditingSession] = useState(null);
   const [health, setHealth] = useState(null);
   const [logoUrl, setLogoUrl] = useState(null);
+  const [fontSize, setFontSize] = useState('default');
   const [chatLoading, setChatLoading] = useState(false);
   const [toolLoading, setToolLoading] = useState(false);
   const [toolResultCount, setToolResultCount] = useState(0);
   const chatAbortRef = React.useRef(null);
   const [clients, setClients] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
+
+  // Apply font size to root element
+  useEffect(() => {
+    const sizes = { small: '14px', default: '16px', large: '18px', 'x-large': '20px' };
+    document.documentElement.style.fontSize = sizes[fontSize] || '16px';
+  }, [fontSize]);
 
   // Resizable output pane — persisted across sessions
   const [outputWidth, setOutputWidth] = useState(() => {
@@ -238,7 +245,10 @@ export default function App() {
       }
     }).catch(() => {});
     api.listTools().then(data => setTools(data.tools || {})).catch(() => {});
-    api.getLogo().then(data => setLogoUrl(data.logo || null)).catch(() => {});
+    api.getSettings().then(data => {
+      setLogoUrl(data.logo || null);
+      if (data.font_size) setFontSize(data.font_size);
+    }).catch(() => {});
     api.listClients().then(setClients).catch(() => {});
   }, [currentUser]);
 
@@ -451,7 +461,7 @@ export default function App() {
                   <ToolsAdmin />
                 )}
                 {activeTab === 'settings' && (
-                  <SettingsPanel logoUrl={logoUrl} onLogoChange={setLogoUrl} />
+                  <SettingsPanel logoUrl={logoUrl} onLogoChange={setLogoUrl} fontSize={fontSize} onFontSizeChange={setFontSize} />
                 )}
                 {!activeSession && !['admin','tooladmin','settings','clients','screenshots','files'].includes(activeTab) && (
                   <div className="flex-1 flex items-center justify-center text-gray-500 h-full">

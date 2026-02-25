@@ -498,7 +498,7 @@ class PentestAgent:
         self.toolbox_url = toolbox_url
         self.session = session
         self.broadcast = broadcast_fn
-        self.model = "claude-sonnet-4-6-20250514"
+        self.model = "claude-sonnet-4-6"
     
     def _get_tools_schema(self) -> list[dict]:
         """Define tools available to the AI agent."""

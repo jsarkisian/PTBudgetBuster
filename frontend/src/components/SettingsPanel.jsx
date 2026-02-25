@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 
-export default function SettingsPanel({ logoUrl, onLogoChange }) {
+export default function SettingsPanel({ logoUrl, onLogoChange, fontSize, onFontSizeChange }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -28,8 +28,9 @@ export default function SettingsPanel({ logoUrl, onLogoChange }) {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
         <BrandingSection logoUrl={logoUrl} onLogoChange={onLogoChange} onFlash={flash} onError={setError} />
+        <FontSizeSection fontSize={fontSize} onFontSizeChange={onFontSizeChange} onFlash={flash} onError={setError} />
       </div>
     </div>
   );
@@ -83,27 +84,30 @@ function BrandingSection({ logoUrl, onLogoChange, onFlash, onError }) {
     <div>
       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Branding</h3>
       <div className="flex items-center gap-4">
-        <div className="w-12 h-12 flex items-center justify-center bg-dark-800 border border-dark-600 rounded-lg shrink-0">
+        <div className="w-16 h-16 flex items-center justify-center bg-dark-800 border border-dark-600 rounded-lg shrink-0">
           {preview
-            ? <img src={preview} alt="Logo" className="w-10 h-10 object-contain rounded" />
-            : <span className="text-2xl">🛡️</span>
+            ? <img src={preview} alt="Logo" className="w-14 h-14 object-contain rounded" />
+            : <span className="text-3xl">🛡️</span>
           }
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="btn-primary text-xs px-3 py-1.5"
-          >
-            Upload Logo
-          </button>
-          {preview && (
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
             <button
-              onClick={handleReset}
-              className="btn-ghost text-xs px-3 py-1.5"
+              onClick={() => fileInputRef.current?.click()}
+              className="btn-primary text-xs px-3 py-1.5"
             >
-              Reset
+              Upload Logo
             </button>
-          )}
+            {preview && (
+              <button
+                onClick={handleReset}
+                className="btn-ghost text-xs px-3 py-1.5"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-600">PNG, JPG, SVG -- max 1MB</p>
         </div>
         <input
           ref={fileInputRef}
@@ -112,8 +116,50 @@ function BrandingSection({ logoUrl, onLogoChange, onFlash, onError }) {
           className="hidden"
           onChange={handleFileChange}
         />
-        <p className="text-xs text-gray-600">PNG, JPG, SVG · max 1MB</p>
       </div>
+    </div>
+  );
+}
+
+function FontSizeSection({ fontSize, onFontSizeChange, onFlash, onError }) {
+  const options = [
+    { value: 'small', label: 'Small', px: '14px' },
+    { value: 'default', label: 'Default', px: '16px' },
+    { value: 'large', label: 'Large', px: '18px' },
+    { value: 'x-large', label: 'Extra Large', px: '20px' },
+  ];
+
+  const handleChange = async (size) => {
+    onFontSizeChange(size);
+    try {
+      await api.setFontSize(size);
+      onFlash('Font size updated');
+    } catch (err) {
+      onError(err.message);
+    }
+  };
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Font Size</h3>
+      <div className="flex gap-2">
+        {options.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => handleChange(opt.value)}
+            className={`px-4 py-2 rounded text-xs font-medium border transition-colors ${
+              fontSize === opt.value
+                ? 'bg-accent-blue/20 border-accent-blue/50 text-accent-blue'
+                : 'bg-dark-800 border-dark-600 text-gray-400 hover:bg-dark-700 hover:text-gray-300'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-gray-600 mt-2">
+        Applies to all users. Current: {options.find(o => o.value === fontSize)?.px || '16px'}
+      </p>
     </div>
   );
 }

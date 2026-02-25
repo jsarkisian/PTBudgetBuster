@@ -12,7 +12,7 @@ export default function HomePage({ sessions, currentUser, logoUrl, onNewSession,
       {/* Hero */}
       <div className="flex flex-col items-center justify-center pt-16 pb-10 px-6">
         {logoUrl
-          ? <img src={logoUrl} alt="Logo" className="h-20 w-20 object-contain mb-4 rounded-xl" />
+          ? <img src={logoUrl} alt="Logo" className="h-36 w-36 object-contain mb-4 rounded-xl" />
           : <div className="text-7xl mb-4">🛡️</div>
         }
         <h1 className="text-3xl font-bold text-gray-100 tracking-tight mb-2">MCP-PT</h1>

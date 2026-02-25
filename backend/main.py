@@ -1184,6 +1184,10 @@ def _save_settings(data: dict):
     _SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _SETTINGS_FILE.write_text(json.dumps(data, indent=2))
 
+@app.get("/api/settings")
+async def get_settings():
+    return _load_settings()
+
 @app.get("/api/settings/logo")
 async def get_logo():
     return {"logo": _load_settings().get("logo")}
@@ -1204,6 +1208,16 @@ async def set_logo(req: SetLogoRequest, admin=Depends(require_admin)):
 async def delete_logo(admin=Depends(require_admin)):
     data = _load_settings()
     data.pop("logo", None)
+    _save_settings(data)
+    return {"status": "ok"}
+
+@app.post("/api/settings/font-size")
+async def set_font_size(body: dict = Body(...), admin=Depends(require_admin)):
+    size = body.get("font_size")
+    if size not in ("small", "default", "large", "x-large"):
+        raise HTTPException(400, "font_size must be small, default, large, or x-large")
+    data = _load_settings()
+    data["font_size"] = size
     _save_settings(data)
     return {"status": "ok"}
 

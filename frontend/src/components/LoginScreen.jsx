@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api, setToken } from '../utils/api';
 
 export default function LoginScreen({ onLogin }) {
@@ -6,6 +6,13 @@ export default function LoginScreen({ onLogin }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [logoUrl, setLogoUrl] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then(data => {
+      setLogoUrl(data.logo || null);
+    }).catch(() => {});
+  }, []);
 
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [tempToken, setTempToken] = useState(null);
@@ -145,7 +152,10 @@ export default function LoginScreen({ onLogin }) {
     <div className="h-screen flex items-center justify-center bg-dark-950">
       <div className="w-full max-w-sm mx-4">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🛡️</div>
+          {logoUrl
+            ? <img src={logoUrl} alt="Logo" className="h-20 w-20 object-contain rounded-xl mx-auto mb-3" />
+            : <div className="text-5xl mb-3">🛡️</div>
+          }
           <h1 className="text-2xl font-bold text-gray-100">MCP-PT</h1>
           <p className="text-sm text-gray-500 mt-1">Sign in to continue</p>
         </div>

@@ -120,9 +120,11 @@ export const api = {
   removeSSHKey: (username, keyId) => request(`/users/${username}/ssh-keys/${keyId}`, { method: 'DELETE' }),
 
   // Settings / Branding
+  getSettings: () => request('/settings'),
   getLogo: () => request('/settings/logo'),
   setLogo: (logo) => request('/settings/logo', { method: 'POST', body: JSON.stringify({ logo }) }),
   deleteLogo: () => request('/settings/logo', { method: 'DELETE' }),
+  setFontSize: (font_size) => request('/settings/font-size', { method: 'POST', body: JSON.stringify({ font_size }) }),
 
   // Screenshots
   listScreenshots: (dir = '') => request(`/screenshots?directory=${encodeURIComponent(dir)}`),
