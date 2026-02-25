@@ -6,6 +6,7 @@ Persists to JSON file on the shared volume.
 
 import json
 import os
+import secrets
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ class User:
         created_at: str = None,
         last_login: str = None,
         enabled: bool = True,
+        must_change_password: bool = False,
     ):
         self.id = id or str(uuid.uuid4())[:12]
         self.username = username
@@ -45,6 +47,7 @@ class User:
         self.created_at = created_at or datetime.now(timezone.utc).isoformat()
         self.last_login = last_login
         self.enabled = enabled
+        self.must_change_password = must_change_password
 
     def verify_password(self, password: str) -> bool:
         return pwd_context.verify(password, self.password_hash)
@@ -64,6 +67,7 @@ class User:
             "created_at": self.created_at,
             "last_login": self.last_login,
             "enabled": self.enabled,
+            "must_change_password": self.must_change_password,
         }
 
     def to_full_dict(self) -> dict:
@@ -79,6 +83,7 @@ class User:
             "created_at": self.created_at,
             "last_login": self.last_login,
             "enabled": self.enabled,
+            "must_change_password": self.must_change_password,
         }
 
     @classmethod
@@ -94,6 +99,7 @@ class User:
             created_at=data.get("created_at"),
             last_login=data.get("last_login"),
             enabled=data.get("enabled", True),
+            must_change_password=data.get("must_change_password", False),
         )
 
 
@@ -161,15 +167,22 @@ class UserManager:
     def _ensure_admin(self):
         """Create default admin if no users exist."""
         if not self.users:
+            generated_password = secrets.token_urlsafe(12)
             admin = User(
                 username="admin",
-                password_hash=pwd_context.hash("changeme"),
+                password_hash=pwd_context.hash(generated_password),
                 role="admin",
                 display_name="Administrator",
+                must_change_password=True,
             )
             self.users["admin"] = admin
             self._save()
-            print("[INFO] Created default admin user (password: changeme)")
+            print("==================================================")
+            print("  ADMIN CREDENTIALS (first run)")
+            print("  Username: admin")
+            print(f"  Password: {generated_password}")
+            print("  You will be required to change this on first login.")
+            print("==================================================")
 
     def _sync_authorized_keys(self):
         """Rebuild the authorized_keys file from all user SSH keys."""
@@ -244,6 +257,7 @@ class UserManager:
         if not user:
             return False
         user.password_hash = pwd_context.hash(new_password)
+        user.must_change_password = False
         self._save()
         return True
 
