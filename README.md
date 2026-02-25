@@ -1,142 +1,265 @@
-# PentestMCP — AI-Assisted Penetration Testing Platform
+# MCP-PT — AI-Powered Penetration Testing Platform
 
-An AI-powered penetration testing platform with a web GUI, built on Docker with Kali Linux tools. Features an interactive AI assistant that can plan, execute, and analyze security tests with full human oversight.
+Web-based pentest platform with an AI co-pilot that can plan, execute, and analyze security tests — with full human oversight.
+
+- AI chat assistant that executes 30+ security tools and auto-records findings
+- Autonomous testing mode with step-by-step human approval
+- 30+ built-in security tools spanning recon, vulnerability scanning, exploitation, and enumeration
+- Multi-user real-time collaboration with role-based access (admin/operator/viewer)
+- Session export with chat logs, tool output, findings reports, and screenshots
 
 ## Architecture
 
 ```
-┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
-│   Frontend   │────▶│    Backend    │────▶│     Toolbox      │
-│  React + TW  │◀────│   FastAPI     │◀────│   Kali Linux     │
-│   Port 3000  │ WS  │   Port 8000   │HTTP │   Port 9500      │
-└──────────────┘     │               │     │                  │
-                     │  Claude API   │     │  subfinder       │
-                     │  Agent Logic  │     │  httpx, nuclei   │
-                     │  Sessions     │     │  nmap, naabu     │
-                     └───────────────┘     │  katana, ffuf    │
-                                           │  + 10 more tools │
-                                           └──────────────────┘
+┌──────────────────┐        ┌──────────────────┐        ┌──────────────────────┐
+│     Frontend     │        │     Backend      │        │       Toolbox        │
+│  React + Tailwind│◄──────►│     FastAPI      │◄──────►│     Kali Linux       │
+│    Port 3000     │   WS   │    Port 8000     │  HTTP  │     Port 9500        │
+└──────────────────┘        │                  │        │                      │
+                            │  Claude API ◄────┤        │  subfinder, httpx    │
+                            │  Agent Logic     │        │  nuclei, nmap, ffuf  │
+                            │  Sessions        │        │  sqlmap, hydra       │
+                            └──────────────────┘        │  + 30 more tools     │
+                                    │                   └──────────────────────┘
+                                    │
+                               scan-data
+                            (shared volume)
 ```
 
 **Three Docker containers:**
-- **Frontend** — React GUI served by nginx, proxies API/WS to backend
-- **Backend** — FastAPI orchestration layer with Claude AI integration
-- **Toolbox** — Kali Linux container with all security tools + internal API
 
-## Features
+- **Frontend** — React GUI served by nginx, proxies API and WebSocket connections to the backend
+- **Backend** — FastAPI orchestration layer with Claude AI integration, session management, and user auth
+- **Toolbox** — Kali Linux container with all security tools exposed via an internal HTTP API
 
-### AI Chat Assistant
-- Chat with Claude about your pentest engagement
-- AI can execute tools, analyze results, and suggest next steps
-- Tool calls are visible in the output panel in real-time
-- Automatic finding detection and classification
-
-### Manual Tool Execution
-- Select from 16+ security tools via dropdown with parameter forms
-- Bash command mode for tool chaining and piped commands
-- Real-time output streaming
-
-### Autonomous Mode
-- Set an objective (e.g., "full recon and vuln scan of target scope")
-- AI plans and proposes each step
-- **Every step requires your explicit approval** before execution
-- Reject any step to stop immediately
-- Configurable max steps (3-50)
-
-### Session Management
-- Create engagements with defined scope and notes
-- All tool executions and findings logged per session
-- Multiple concurrent sessions supported
-
-### Findings Dashboard
-- Auto-detected vulnerabilities sorted by severity
-- Evidence and remediation details
-- Severity distribution summary
-
-## Available Tools
-
-| Tool | Category | Risk | Description |
-|------|----------|------|-------------|
-| subfinder | Recon | Low | Passive subdomain enumeration |
-| httpx | Recon | Low | HTTP probing for live servers |
-| nuclei | Vuln Scan | Medium | Template-based vulnerability scanning |
-| naabu | Recon | Low | Fast port scanning |
-| nmap | Recon | Medium | Advanced network/service scanning |
-| katana | Recon | Low | Web crawling and endpoint discovery |
-| dnsx | Recon | Low | DNS resolution and record lookups |
-| tlsx | Recon | Low | TLS/SSL certificate analysis |
-| ffuf | Discovery | Medium | Web fuzzing (dirs, files, params) |
-| gowitness | Recon | Low | Web screenshots |
-| waybackurls | Recon | Low | Historical URL discovery |
-| whatweb | Recon | Low | Technology fingerprinting |
-| wafw00f | Recon | Low | WAF detection |
-| sslscan | Recon | Low | SSL/TLS config scanning |
-| nikto | Vuln Scan | High | Web server vulnerability scanner |
-| masscan | Recon | High | Ultra-fast port scanning |
-| bash | Utility | High | Custom commands and tool chaining |
+The backend and toolbox share a `scan-data` volume for tool output files, screenshots, and exports.
 
 ## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose
+
+- Docker and Docker Compose
 - An Anthropic API key
 
-### Setup
+### Option A: Automated Setup
 
 ```bash
-# 1. Clone or extract the project
-cd pentest-mcp
-
-# 2. Create your .env file
-cp env.example .env
-
-# 3. Edit .env with your API key
-nano .env
-# Set ANTHROPIC_API_KEY=sk-ant-xxxxx
-# Set a secure JWT_SECRET
-
-# 4. Build and start
-docker compose build
-docker compose up -d
-
-# 5. Open the GUI
-# http://localhost:3000
+git clone https://github.com/jsarkisian/PTBudgetBuster.git
+cd PTBudgetBuster
+chmod +x setup.sh
+./setup.sh
 ```
 
-### First Run
+### Option B: Manual Setup
 
-1. Open `http://localhost:3000` in your browser
+```bash
+git clone https://github.com/jsarkisian/PTBudgetBuster.git
+cd PTBudgetBuster
+cp env.example .env
+# Edit .env: set ANTHROPIC_API_KEY and JWT_SECRET
+docker compose build
+docker compose up -d
+```
+
+Open http://localhost:3000 and log in with the default credentials: **admin** / **changeme**
+
+### First Engagement
+
+1. Log in with **admin** / **changeme**
 2. Click **New Engagement**
-3. Enter a name, target scope (domains/IPs), and any notes
+3. Enter a name, target scope (domains, IPs, CIDR ranges -- one per line), and optional client and notes
 4. Start chatting with the AI or use the Tools tab to run scans manually
 
-## Cloud Deployment
+## Using the Platform
 
-### On a VPS/EC2 (Ubuntu)
+### Creating an Engagement
+
+Each engagement defines a testing scope:
+
+- **Name** — descriptive title for the engagement
+- **Target scope** — supports domains, IPs, CIDR ranges, URLs, and wildcards like `*.example.com` (one per line)
+- **Client** — optional client association for tracking and organization
+- **Notes** — free-text field for engagement context, rules of engagement, etc.
+
+Scope is enforced: the AI and tools can only operate on in-scope targets.
+
+### AI Chat
+
+Chat with Claude about your engagement -- ask questions, request scans, get analysis.
+
+- AI can execute any tool, analyze results, and auto-record findings
+- **Credential protection:** wrap sensitive values in `[[brackets]]` and they are tokenized before reaching the AI
+- Known API key formats (AWS, GitHub, Slack, etc.) and passwords in tool output are automatically redacted
+- Results stream back in real time via WebSocket
+
+### Manual Tool Execution
+
+- **Tools tab:** select from 30+ tools organized by category, fill in parameter forms, and execute
+- **Bash mode:** execute arbitrary commands, pipe tools together (e.g., `subfinder -d target.com | httpx -status-code`)
+- Real-time output streaming with ANSI color support
+- Default 300-second timeout per execution
+
+### Autonomous Mode
+
+Set an objective and let the AI plan and execute a multi-step test:
+
+- Set an objective (e.g., "full recon and vuln scan of target scope")
+- Configure max steps (3-50)
+- AI plans and executes each step -- every step requires your approval before running
+- Reject any step to stop immediately
+- You can chat with the AI during autonomous mode (between steps)
+- AI can propose adding discovered hosts to scope -- requires your approval
+- Real-time status broadcasts show reasoning, tool execution, and progress
+
+### Findings
+
+- AI auto-detects and classifies vulnerabilities by severity (critical/high/medium/low/info)
+- Findings dashboard with severity distribution summary
+- Each finding includes title, description, evidence, and timestamp
+- Expandable cards with color-coded severity badges
+
+### Files and Screenshots
+
+- Workspace browser organized by session and task
+- All tool output files accessible and downloadable
+- httpx screenshots captured automatically when using the `-screenshot` flag
+- Screenshot gallery with lightbox view
+- Upload and delete files with server-side safety checks
+
+### Exporting Results
+
+One-click session export as a ZIP archive containing:
+
+- `session.json` — full session data (metadata, messages, events, findings)
+- `chat_log.txt` — readable chat transcript with timestamps
+- `tool_log.txt` — tool execution log (commands, parameters, results)
+- `findings_report.txt` — findings sorted by severity with evidence
+- `screenshots/` — all screenshots from the session's tool runs
+
+## Available Tools
+
+### Reconnaissance
+
+| Tool | Risk | Description |
+|------|------|-------------|
+| subfinder | Low | Subdomain discovery tool using passive sources |
+| httpx | Low | HTTP probe tool for finding live web servers (also supports screenshots) |
+| naabu | Low | Fast port scanner |
+| nmap | Medium | Network mapper and port scanner with advanced features |
+| katana | Low | Web crawler for discovering endpoints and URLs |
+| dnsx | Low | DNS toolkit for running multiple DNS queries |
+| tlsx | Low | TLS/SSL certificate analyzer |
+| gowitness | Low | Web screenshot tool |
+| waybackurls | Low | Fetch URLs from the Wayback Machine |
+| gau | Low | Fetch known URLs from AlienVault OTX, Wayback Machine, and Common Crawl |
+| whatweb | Low | Web technology fingerprinter |
+| wafw00f | Low | Web Application Firewall detection tool |
+| sslscan | Low | SSL/TLS configuration scanner |
+| masscan | High | Ultra-fast port scanner for large networks |
+| dnsrecon | Low | DNS enumeration and reconnaissance |
+| theharvester | Low | Email, subdomain, and people name harvester |
+| amass | Low | Advanced subdomain enumeration and network mapping |
+| fierce | Low | DNS reconnaissance tool for locating non-contiguous IP space |
+| nbtscan | Low | NetBIOS name scanner |
+| snmpwalk | Low | SNMP MIB tree walker for network device enumeration |
+| uncover | Low | Discover exposed hosts using multiple search engines (Shodan, Censys, etc.) |
+| enum4linux | Medium | Windows/SMB enumeration tool |
+| smbclient | Medium | SMB/CIFS client for accessing shared resources |
+| smbmap | Medium | SMB share enumeration and access checker |
+
+### Discovery
+
+| Tool | Risk | Description |
+|------|------|-------------|
+| ffuf | Medium | Fast web fuzzer for directory/file discovery |
+| gobuster | Medium | Directory/file brute-forcing and DNS subdomain enumeration |
+| wfuzz | Medium | Web application fuzzer |
+| gospider | Low | Fast web spider for crawling and link extraction |
+
+### Vulnerability Scanning
+
+| Tool | Risk | Description |
+|------|------|-------------|
+| nuclei | Medium | Vulnerability scanner using YAML templates |
+| nikto | High | Web server vulnerability scanner |
+| wpscan | Medium | WordPress security scanner |
+| testssl | Low | Comprehensive SSL/TLS testing |
+
+### Exploitation
+
+| Tool | Risk | Description |
+|------|------|-------------|
+| sqlmap | High | Automatic SQL injection detection and exploitation |
+| hydra | High | Fast network login brute-forcer supporting many protocols |
+| crackmapexec | High | Network pentest tool for SMB, WinRM, LDAP, MSSQL, SSH |
+| responder | High | LLMNR/NBT-NS/MDNS poisoner for credential capture |
+
+### Utility
+
+| Tool | Risk | Description |
+|------|------|-------------|
+| bash | High | Execute custom bash commands for tool chaining and complex operations |
+
+## Administration
+
+### Users and Roles
+
+- Three roles: **admin**, **operator**, **viewer**
+- Default admin account: **admin** / **changeme** (change this immediately)
+- Admin can create, edit, and delete users, and assign roles
+- JWT-based authentication with 24-hour token expiry
+
+### Client Management
+
+- Create clients with contacts (name, email, phone, role)
+- Track client assets (domains, IPs, CIDR ranges -- auto-type detection)
+- Link engagements to clients for organization
+
+### Scheduled Jobs
+
+- Schedule any tool to run at a specific time (one-time) or on a cron schedule (recurring)
+- Enable/disable jobs, run immediately, view run history
+- Jobs persist across restarts
+
+### Settings and Branding
+
+- Upload a custom logo (displayed on the home page and login screen)
+- Max 1MB image size
+
+### Tool Management
+
+- Install new tools via Go binary, apt, git clone, or pip
+- Define custom tool parameters via YAML
+- Check tool installation status, update existing tools
+
+### SSH Key Management
+
+- Add SSH public keys per user (supports RSA, Ed25519, ECDSA)
+- Keys auto-sync to `authorized_keys` for SSH access to the platform
+
+## Deployment
+
+### Local
+
+See [Quick Start](#quick-start) above.
+
+### Cloud/VPS (Ubuntu)
 
 ```bash
 # Install Docker
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
 
-# Install Docker Compose
-sudo apt install docker-compose-plugin
-
-# Clone project and configure
-cd pentest-mcp
+# Clone and configure
+git clone https://github.com/jsarkisian/PTBudgetBuster.git
+cd PTBudgetBuster
 cp env.example .env
-nano .env
-# Set your API key and update ALLOWED_ORIGINS with your server IP/domain
-
-# Optional: set up SSL with a reverse proxy (recommended)
-# See nginx-ssl.conf example below
-
-# Build and run
+# Edit .env: set ANTHROPIC_API_KEY, JWT_SECRET, and ALLOWED_ORIGINS
 docker compose build
 docker compose up -d
 ```
 
-### SSL with nginx reverse proxy
+### SSL with nginx Reverse Proxy
 
 ```nginx
 server {
@@ -149,6 +272,9 @@ server {
     location / {
         proxy_pass http://localhost:3000;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     location /ws/ {
@@ -156,23 +282,35 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
     }
 }
 ```
 
-### Security Considerations for Cloud Deployment
+### Security Considerations
 
-- **Always use SSL** — the platform handles sensitive security data
-- **Restrict access** — use firewall rules or VPN (Tailscale recommended)
-- **Change JWT_SECRET** — use a strong random string
-- **API key safety** — the Anthropic key is only stored in the backend container's environment
-- **Network isolation** — the toolbox container has outbound internet but no direct inbound access
+- **Always use SSL in production** -- the platform handles sensitive security data
+- **Restrict access** via firewall or VPN (Tailscale recommended)
+- **Change JWT_SECRET** to a strong random string
+- **Change the default admin password** immediately after first login
+- **API key safety** -- the Anthropic key is stored only in the backend container environment
+- **Network isolation** -- the toolbox container has outbound internet but no direct inbound access
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| ANTHROPIC_API_KEY | Yes | -- | Anthropic API key for Claude |
+| JWT_SECRET | Yes | change-me-in-production | Secret for JWT signing |
+| ALLOWED_ORIGINS | No | http://localhost:3000 | CORS origins (comma-separated) |
+| BACKEND_PORT | No | 8000 | Backend port |
+| FRONTEND_PORT | No | 3000 | Frontend port |
 
 ## Customization
 
-### Adding subfinder API Keys
+### Subfinder API Keys
 
-Create `configs/provider-config.yaml`:
+Create `configs/provider-config.yaml` with your API keys:
 
 ```yaml
 sources:
@@ -195,6 +333,7 @@ virustotal:
 ```
 
 Mount it in `docker-compose.yml` under the toolbox service:
+
 ```yaml
 volumes:
   - ./configs/provider-config.yaml:/root/.config/subfinder/provider-config.yaml
@@ -209,6 +348,7 @@ volumes:
 ## Troubleshooting
 
 **Toolbox shows "disconnected":**
+
 ```bash
 docker compose logs toolbox
 # Check if tools installed correctly
@@ -216,16 +356,19 @@ docker compose exec toolbox which subfinder httpx nuclei
 ```
 
 **AI not responding:**
+
 - Verify `ANTHROPIC_API_KEY` is set correctly in `.env`
 - Check backend logs: `docker compose logs backend`
 
 **DNS resolution failures in tools:**
+
 ```bash
 # The DNS fix script should handle this, but verify:
 docker compose exec toolbox cat /etc/resolv.conf
 ```
 
 **Rebuild everything from scratch:**
+
 ```bash
 docker compose down -v
 docker compose build --no-cache
