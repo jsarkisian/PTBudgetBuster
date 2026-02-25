@@ -5,12 +5,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.toolbox
-    container_name: pentest-toolbox
+    container_name: mcp-pt-toolbox
     volumes:
       - scan-data:/opt/pentest/data
       - tool-configs:/opt/pentest/configs
     networks:
-      - pentest-net
+      - mcp-pt-net
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: pentest-backend
+    container_name: mcp-pt-backend
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -39,20 +39,20 @@ services:
     depends_on:
       - toolbox
     networks:
-      - pentest-net
+      - mcp-pt-net
     restart: unless-stopped
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: pentest-frontend
+    container_name: mcp-pt-frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
     networks:
-      - pentest-net
+      - mcp-pt-net
     restart: unless-stopped
 
 volumes:
@@ -60,5 +60,5 @@ volumes:
   tool-configs:
 
 networks:
-  pentest-net:
+  mcp-pt-net:
     driver: bridge
