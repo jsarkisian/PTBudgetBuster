@@ -7,6 +7,7 @@ export default function ScreenshotGallery() {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('');
   const [lightbox, setLightbox] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -22,8 +23,24 @@ export default function ScreenshotGallery() {
 
   useEffect(() => { load(); }, []);
 
+  const handleDelete = async (path) => {
+    setDeleteError(null);
+    try {
+      await api.deleteFile(path);
+      setScreenshots(prev => prev.filter(s => s.path !== path));
+      // If the deleted screenshot is open in the lightbox, close it
+      if (lightbox) setLightbox(null);
+    } catch (e) {
+      setDeleteError(e.message || 'Delete failed');
+      setTimeout(() => setDeleteError(null), 4000);
+    }
+  };
+
   const filtered = filter
-    ? screenshots.filter(s => s.name?.toLowerCase().includes(filter.toLowerCase()) || s.path?.toLowerCase().includes(filter.toLowerCase()))
+    ? screenshots.filter(s =>
+        s.name?.toLowerCase().includes(filter.toLowerCase()) ||
+        s.path?.toLowerCase().includes(filter.toLowerCase())
+      )
     : screenshots;
 
   return (
@@ -34,6 +51,9 @@ export default function ScreenshotGallery() {
           <span className="text-xs text-gray-500">{filtered.length} of {screenshots.length}</span>
         </div>
         <div className="flex items-center gap-2">
+          {deleteError && (
+            <span className="text-xs text-red-400">{deleteError}</span>
+          )}
           <input
             type="text"
             value={filter}
@@ -56,15 +76,18 @@ export default function ScreenshotGallery() {
           <div className="text-center text-gray-600 text-xs py-12">Loading screenshots...</div>
         ) : filtered.length === 0 ? (
           <div className="text-center text-gray-600 text-xs py-12">
-            {screenshots.length === 0 ? 'No screenshots yet. Run a tool that captures screenshots.' : 'No screenshots match filter.'}
+            {screenshots.length === 0
+              ? 'No screenshots yet. Run a tool that captures screenshots.'
+              : 'No screenshots match filter.'}
           </div>
         ) : (
           <div className="flex flex-wrap gap-3">
             {filtered.map((ss, idx) => (
               <ScreenshotThumb
-                key={idx}
+                key={ss.path || idx}
                 path={ss.path}
                 onClick={(src, filename) => setLightbox({ src, filename })}
+                onDelete={handleDelete}
               />
             ))}
           </div>

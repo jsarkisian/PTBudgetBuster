@@ -388,6 +388,43 @@ async def read_file(path: str):
     return {"path": str(file_path), "content": content}
 
 
+@app.delete("/files/{path:path}")
+async def delete_file(path: str):
+    """Permanently delete a file within the data directory.
+
+    The path must be relative to /opt/pentest (matching what the workspace
+    endpoint returns, e.g. 'data/subdomains.txt' or
+    'data/<task_id>/output/screenshot/host/hash.png').
+    Paths that resolve outside /opt/pentest/data are rejected.
+    """
+    data_root = Path("/opt/pentest/data").resolve()
+    file_path = (Path("/opt/pentest") / path).resolve()
+
+    # Security: block traversal outside data directory
+    try:
+        file_path.relative_to(data_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied: path outside data directory")
+
+    # Block internal directories that must never be user-deletable
+    PROTECTED_DIRS = {"sessions"}
+    if any(part in PROTECTED_DIRS for part in file_path.parts):
+        raise HTTPException(status_code=403, detail="Access denied: cannot delete internal data")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+
+    file_path.unlink()
+
+    # Confirm deletion
+    if file_path.exists():
+        raise HTTPException(status_code=500, detail="File could not be deleted")
+
+    return {"status": "deleted", "path": path}
+
+
 @app.get("/images/{path:path}")
 async def serve_image(path: str):
     """Serve image files from anywhere on the filesystem."""

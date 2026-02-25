@@ -60,11 +60,13 @@ function fileIcon(filename) {
 
 // ── FileViewer ──────────────────────────────────────────────────────────
 
-function FileViewer({ file, onClose }) {
+function FileViewer({ file, onClose, onDelete }) {
   const [content, setContent] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!file) return;
@@ -126,6 +128,26 @@ function FileViewer({ file, onClose }) {
             {copied ? '✓ Copied' : '⎘ Copy'}
           </button>
         )}
+        <button
+          onClick={async () => {
+            if (!confirmDelete) {
+              setConfirmDelete(true);
+              setTimeout(() => setConfirmDelete(false), 3000);
+              return;
+            }
+            setDeleting(true);
+            try { await onDelete(file); } finally { setDeleting(false); setConfirmDelete(false); }
+          }}
+          disabled={deleting}
+          className={`shrink-0 text-xs px-2 py-1 rounded border transition-colors ${
+            confirmDelete
+              ? 'bg-red-600 border-red-600 text-white'
+              : 'btn-ghost text-gray-500 hover:text-red-400 hover:border-red-500/50'
+          }`}
+          title={confirmDelete ? 'Click again to permanently delete' : 'Delete file'}
+        >
+          {deleting ? '…' : confirmDelete ? 'Confirm delete?' : '🗑'}
+        </button>
         <button onClick={onClose} className="btn-ghost text-xs px-2 py-1 text-gray-500 shrink-0">✕</button>
       </div>
 
@@ -158,25 +180,64 @@ function FileViewer({ file, onClose }) {
 
 // ── FileRow ─────────────────────────────────────────────────────────────
 
-function FileRow({ file, selected, onSelect }) {
+function FileRow({ file, selected, onSelect, onDelete }) {
+  const [confirm, setConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteClick = async (e) => {
+    e.stopPropagation();
+    if (!confirm) {
+      setConfirm(true);
+      setTimeout(() => setConfirm(false), 3000);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await onDelete(file);
+    } finally {
+      setDeleting(false);
+      setConfirm(false);
+    }
+  };
+
   return (
-    <button
+    <div
       onClick={() => onSelect(file)}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-dark-700 transition-colors ${
+      className={`group w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-dark-700 transition-colors cursor-pointer ${
         selected ? 'bg-dark-700 text-gray-100' : 'text-gray-300'
       }`}
     >
       <span className="text-sm shrink-0 leading-none">{fileIcon(file.name)}</span>
       <span className="flex-1 truncate font-mono">{file.name}</span>
       <span className="text-gray-600 shrink-0 tabular-nums">{fmtSize(file.size)}</span>
-    </button>
+      <button
+        onClick={handleDeleteClick}
+        disabled={deleting}
+        className={`shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] transition-all ${
+          confirm
+            ? 'bg-red-600 text-white opacity-100'
+            : 'opacity-0 group-hover:opacity-100 bg-dark-600 text-gray-500 hover:bg-red-600 hover:text-white'
+        }`}
+        title={confirm ? 'Click again to confirm delete' : 'Delete file'}
+      >
+        {deleting ? '…' : confirm ? '!' : '×'}
+      </button>
+    </div>
   );
 }
 
 // ── RunSection ──────────────────────────────────────────────────────────
 
-function RunSection({ run, selectedFile, onSelectFile }) {
+function RunSection({ run, selectedFile, onSelectFile, onDeleteFile }) {
   const [expanded, setExpanded] = useState(false);
+  const [files, setFiles] = useState(run.files);
+
+  const handleDelete = async (file) => {
+    await onDeleteFile(file);
+    setFiles(prev => prev.filter(f => f.path !== file.path));
+  };
+
+  if (files.length === 0) return null;
 
   return (
     <div className="border-b border-dark-800 last:border-0">
@@ -187,19 +248,20 @@ function RunSection({ run, selectedFile, onSelectFile }) {
         <span className="text-sm shrink-0 leading-none">{toolIcon(run.tool)}</span>
         <span className="text-xs font-semibold text-gray-200 shrink-0">{run.label}</span>
         <span className="text-[10px] text-gray-600 flex-1 truncate ml-1">
-          {run.file_count} file{run.file_count !== 1 ? 's' : ''} · {fmtSize(run.total_size)}
+          {files.length} file{files.length !== 1 ? 's' : ''} · {fmtSize(run.total_size)}
         </span>
         <span className="text-[10px] text-gray-600 shrink-0 tabular-nums">{relativeTime(run.timestamp)}</span>
         <span className="text-gray-600 text-[10px] shrink-0 ml-1">{expanded ? '▲' : '▼'}</span>
       </button>
       {expanded && (
         <div className="bg-dark-950/50">
-          {run.files.map((f, i) => (
+          {files.map((f, i) => (
             <FileRow
-              key={i}
+              key={f.path || i}
               file={f}
               selected={selectedFile?.path === f.path}
               onSelect={onSelectFile}
+              onDelete={handleDelete}
             />
           ))}
         </div>
@@ -210,7 +272,7 @@ function RunSection({ run, selectedFile, onSelectFile }) {
 
 // ── SessionSection ──────────────────────────────────────────────────────
 
-function SessionSection({ session, selectedFile, onSelectFile }) {
+function SessionSection({ session, selectedFile, onSelectFile, onDeleteFile }) {
   const [expanded, setExpanded] = useState(true);
   const totalFiles = session.runs.reduce((s, r) => s + r.file_count, 0);
 
@@ -235,6 +297,7 @@ function SessionSection({ session, selectedFile, onSelectFile }) {
               run={run}
               selectedFile={selectedFile}
               onSelectFile={onSelectFile}
+              onDeleteFile={onDeleteFile}
             />
           ))}
         </div>
@@ -250,6 +313,7 @@ export default function FileManager() {
   const [loading, setLoading] = useState(true);
   const [selectedFile, setSelectedFile] = useState(null);
   const [search, setSearch] = useState('');
+  const [deleteError, setDeleteError] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -260,6 +324,25 @@ export default function FileManager() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleDeleteFile = useCallback(async (file) => {
+    setDeleteError(null);
+    await api.deleteFile(file.path);
+    // Clear viewer if this file is open
+    setSelectedFile(prev => (prev?.path === file.path ? null : prev));
+    // Remove from loose_files and unknown_dirs in workspace state
+    setWorkspace(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        loose_files: prev.loose_files.filter(f => f.path !== file.path),
+        unknown_dirs: prev.unknown_dirs.map(d => ({
+          ...d,
+          files: d.files.filter(f => f.path !== file.path),
+        })).filter(d => d.files.length > 0),
+      };
+    });
+  }, []);
 
   const hasContent = workspace && (
     workspace.sessions.length > 0 ||
@@ -297,6 +380,9 @@ export default function FileManager() {
         {/* Toolbar */}
         <div className="px-3 py-2 border-b border-dark-600 flex items-center gap-2 shrink-0">
           <span className="text-xs font-semibold text-gray-300">Workspace Files</span>
+          {deleteError && (
+            <span className="text-[10px] text-red-400 flex-1 truncate">{deleteError}</span>
+          )}
           <button
             onClick={load}
             disabled={loading}
@@ -338,6 +424,7 @@ export default function FileManager() {
                   session={sess}
                   selectedFile={selectedFile}
                   onSelectFile={setSelectedFile}
+                  onDeleteFile={handleDeleteFile}
                 />
               ))}
 
@@ -349,10 +436,11 @@ export default function FileManager() {
                   </div>
                   {filteredLoose.map((f, i) => (
                     <FileRow
-                      key={i}
+                      key={f.path || i}
                       file={f}
                       selected={selectedFile?.path === f.path}
                       onSelect={setSelectedFile}
+                      onDelete={handleDeleteFile}
                     />
                   ))}
                 </div>
@@ -369,10 +457,11 @@ export default function FileManager() {
                       <div className="px-3 py-1 text-[10px] text-gray-600 font-mono">{dir.name}/</div>
                       {dir.files.map((f, i) => (
                         <FileRow
-                          key={i}
+                          key={f.path || i}
                           file={f}
                           selected={selectedFile?.path === f.path}
                           onSelect={setSelectedFile}
+                          onDelete={handleDeleteFile}
                         />
                       ))}
                     </div>
@@ -389,6 +478,7 @@ export default function FileManager() {
         <FileViewer
           file={selectedFile}
           onClose={() => setSelectedFile(null)}
+          onDelete={handleDeleteFile}
         />
       </div>
     </div>

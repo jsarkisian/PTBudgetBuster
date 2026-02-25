@@ -80,6 +80,7 @@ export const api = {
   getWorkspace: () => request('/workspace'),
   listFiles: (dir = '') => request(`/files?directory=${encodeURIComponent(dir)}`),
   readFile: (path) => request(`/files/${path}`),
+  deleteFile: (path) => request(`/files/${path}`, { method: 'DELETE' }),
 
   // Export
   exportSession: (id) => {

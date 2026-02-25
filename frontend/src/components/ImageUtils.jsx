@@ -82,33 +82,64 @@ export function Lightbox({ src, filename, onClose }) {
   );
 }
 
-export function ScreenshotThumb({ path, onClick }) {
+export function ScreenshotThumb({ path, onClick, onDelete }) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const imageUrl = buildImageUrl(path);
 
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      // Auto-cancel confirm after 3s
+      setTimeout(() => setConfirmDelete(false), 3000);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await onDelete(path);
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   if (errored) {
     return (
-      <div className="w-36 h-24 bg-dark-700 border border-dark-500 rounded flex items-center justify-center text-xs text-gray-500">
+      <div className="w-36 h-24 bg-dark-700 border border-dark-500 rounded flex items-center justify-center text-xs text-gray-500 relative group">
         <div className="text-center px-1">
           <div>📸</div>
           <div className="truncate max-w-[130px]" title={path}>
             {path.split('/').pop()}
           </div>
         </div>
+        {onDelete && (
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className={`absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity ${
+              confirmDelete ? 'bg-red-600 text-white opacity-100' : 'bg-dark-600 text-gray-400 hover:bg-red-600 hover:text-white'
+            }`}
+            title={confirmDelete ? 'Click again to confirm' : 'Delete'}
+          >
+            {confirmDelete ? '!' : '×'}
+          </button>
+        )}
       </div>
     );
   }
 
   return (
-    <div
-      className="relative cursor-pointer group"
-      onClick={() => onClick(imageUrl, path.split('/').pop())}
-    >
-      <div className={`w-36 h-24 bg-dark-700 border border-dark-500 rounded overflow-hidden ${
-        !loaded ? 'animate-pulse' : ''
-      }`}>
+    <div className="relative group">
+      <div
+        className={`w-36 h-24 bg-dark-700 border border-dark-500 rounded overflow-hidden cursor-pointer ${
+          !loaded ? 'animate-pulse' : ''
+        }`}
+        onClick={() => onClick(imageUrl, path.split('/').pop())}
+      >
         <img
           src={imageUrl}
           alt={path.split('/').pop()}
@@ -117,10 +148,31 @@ export function ScreenshotThumb({ path, onClick }) {
           onError={() => setErrored(true)}
         />
       </div>
-      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
+
+      {/* View overlay */}
+      <div
+        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center pointer-events-none"
+      >
         <span className="text-white text-xs font-medium">🔍 View</span>
       </div>
-      <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1 py-0.5 rounded-b">
+
+      {/* Delete button */}
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className={`absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center text-[10px] transition-all ${
+            confirmDelete
+              ? 'bg-red-600 text-white opacity-100 scale-110'
+              : 'bg-dark-800/80 text-gray-400 opacity-0 group-hover:opacity-100 hover:bg-red-600 hover:text-white'
+          }`}
+          title={confirmDelete ? 'Click again to delete' : 'Delete screenshot'}
+        >
+          {deleting ? '…' : confirmDelete ? '!' : '×'}
+        </button>
+      )}
+
+      <div className="absolute bottom-0 left-0 right-0 bg-black/70 px-1 py-0.5 rounded-b pointer-events-none">
         <span className="text-[9px] text-gray-300 truncate block" title={path}>
           {path.split('/').pop()}
         </span>

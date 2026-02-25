@@ -826,6 +826,18 @@ async def read_file(path: str):
         resp = await client.get(f"/files/{path}")
         return resp.json()
 
+@app.delete("/api/files/{path:path}")
+async def delete_file(path: str, current_user=Depends(get_optional_user)):
+    async with get_toolbox_client() as client:
+        resp = await client.delete(f"/files/{path}")
+        if resp.status_code == 404:
+            raise HTTPException(404, "File not found")
+        if resp.status_code == 403:
+            raise HTTPException(403, "Access denied")
+        if resp.status_code == 500:
+            raise HTTPException(500, "File could not be deleted")
+        return resp.json()
+
 @app.get("/api/screenshots")
 async def list_screenshots(directory: str = "", task_id: str = ""):
     params = {}
