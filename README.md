@@ -206,6 +206,7 @@ One-click session export as a ZIP archive containing:
 
 - Three roles: **admin**, **operator**, **viewer**
 - A random admin password is generated on first startup and printed to the backend logs. You must change it on first login.
+- All passwords must meet complexity requirements: at least 14 characters, with uppercase, lowercase, number, and special character
 - Admin can create, edit, and delete users, and assign roles
 - JWT-based authentication with 24-hour token expiry
 
@@ -292,7 +293,7 @@ server {
 - **Always use SSL in production** -- the platform handles sensitive security data
 - **Restrict access** via firewall or VPN (Tailscale recommended)
 - **Change JWT_SECRET** to a strong random string
-- **Admin password is randomly generated on first boot** and must be changed on first login
+- **Admin password is randomly generated on first boot** and must be changed on first login (14+ characters, uppercase, lowercase, number, and special character required)
 - **API key safety** -- the Anthropic key is stored only in the backend container environment
 - **Network isolation** -- the toolbox container has outbound internet but no direct inbound access
 
