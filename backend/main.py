@@ -1090,7 +1090,10 @@ async def get_me(user=Depends(get_current_user)):
 async def change_password(req: ChangePasswordRequest, user=Depends(get_current_user)):
     if not user.verify_password(req.current_password):
         raise HTTPException(400, "Current password is incorrect")
-    user_mgr.change_password(user.username, req.new_password)
+    try:
+        user_mgr.change_password(user.username, req.new_password)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return {"status": "password_changed"}
 
 
@@ -1166,8 +1169,11 @@ async def delete_user(username: str, admin=Depends(require_admin)):
 
 @app.post("/api/users/{username}/reset-password")
 async def reset_password(username: str, req: ResetPasswordRequest, admin=Depends(require_admin)):
-    if not user_mgr.change_password(username, req.new_password):
-        raise HTTPException(404, "User not found")
+    try:
+        if not user_mgr.change_password(username, req.new_password):
+            raise HTTPException(404, "User not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return {"status": "password_reset"}
 
 # SSH Key endpoints

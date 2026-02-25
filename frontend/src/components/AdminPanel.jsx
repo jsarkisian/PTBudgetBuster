@@ -238,6 +238,14 @@ function UserDetail({ user, onUpdate, onFlash, onError, showAddKey, setShowAddKe
   };
 
   const handleResetPassword = async () => {
+    if (newPassword.length < 14) {
+      onError('Password must be at least 14 characters');
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/[0-9]/.test(newPassword) || !/[^A-Za-z0-9]/.test(newPassword)) {
+      onError('Password must contain uppercase, lowercase, number, and special character');
+      return;
+    }
     try {
       await api.resetPassword(user.username, newPassword);
       setNewPassword('');
@@ -463,12 +471,16 @@ function ChangePasswordForm() {
 
   const handleSubmit = async () => {
     setError('');
-    if (newPw !== confirmPw) {
-      setError('Passwords do not match');
+    if (newPw.length < 14) {
+      setError('Password must be at least 14 characters');
       return;
     }
-    if (newPw.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (!/[A-Z]/.test(newPw) || !/[a-z]/.test(newPw) || !/[0-9]/.test(newPw) || !/[^A-Za-z0-9]/.test(newPw)) {
+      setError('Password must contain uppercase, lowercase, number, and special character');
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setError('Passwords do not match');
       return;
     }
     try {
@@ -528,6 +540,14 @@ function CreateUserModal({ onClose, onCreate, onError }) {
     setError('');
     if (!username || !password) {
       setError('Username and password are required');
+      return;
+    }
+    if (password.length < 14) {
+      setError('Password must be at least 14 characters');
+      return;
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+      setError('Password must contain uppercase, lowercase, number, and special character');
       return;
     }
     try {

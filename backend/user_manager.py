@@ -22,6 +22,24 @@ AUTHORIZED_KEYS_FILE = Path("/root/.ssh/authorized_keys")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def validate_password(password: str) -> None:
+    """Enforce password complexity. Raises ValueError if invalid."""
+    import re
+    errors = []
+    if len(password) < 14:
+        errors.append("at least 14 characters")
+    if not re.search(r"[A-Z]", password):
+        errors.append("an uppercase letter")
+    if not re.search(r"[a-z]", password):
+        errors.append("a lowercase letter")
+    if not re.search(r"[0-9]", password):
+        errors.append("a number")
+    if not re.search(r"[^A-Za-z0-9]", password):
+        errors.append("a special character")
+    if errors:
+        raise ValueError("Password must contain " + ", ".join(errors))
+
+
 class User:
     def __init__(
         self,
@@ -224,6 +242,7 @@ class UserManager:
             raise ValueError(f"User '{username}' already exists")
         if role not in ("admin", "operator", "viewer"):
             raise ValueError(f"Invalid role: {role}")
+        validate_password(password)
 
         user = User(
             username=username,
@@ -258,6 +277,7 @@ class UserManager:
         return user
 
     def change_password(self, username: str, new_password: str) -> bool:
+        validate_password(new_password)
         username = username.lower()
         user = self.users.get(username) or self.users.get(username.lower()) or self.users.get(username.capitalize())
         if not user:

@@ -42,8 +42,24 @@ export default function LoginScreen({ onLogin }) {
     e.preventDefault();
     setChangeError('');
 
-    if (newPassword.length < 8) {
-      setChangeError('Password must be at least 8 characters');
+    if (newPassword.length < 14) {
+      setChangeError('Password must be at least 14 characters');
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      setChangeError('Password must contain an uppercase letter');
+      return;
+    }
+    if (!/[a-z]/.test(newPassword)) {
+      setChangeError('Password must contain a lowercase letter');
+      return;
+    }
+    if (!/[0-9]/.test(newPassword)) {
+      setChangeError('Password must contain a number');
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(newPassword)) {
+      setChangeError('Password must contain a special character');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -95,7 +111,7 @@ export default function LoginScreen({ onLogin }) {
                 placeholder="Enter new password"
                 autoFocus
                 required
-                minLength={8}
+                minLength={14}
               />
             </div>
 
@@ -108,7 +124,7 @@ export default function LoginScreen({ onLogin }) {
                 className="w-full px-3 py-2 bg-dark-700 border border-dark-500 rounded text-sm text-gray-200 focus:border-accent-blue focus:outline-none"
                 placeholder="Confirm new password"
                 required
-                minLength={8}
+                minLength={14}
               />
             </div>
 
