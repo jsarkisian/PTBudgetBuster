@@ -538,20 +538,6 @@ tools:
         flag: "-oL"
         description: "List output file"
 
-# Bash tool for custom commands and piped operations
-  bash:
-    name: bash
-    description: "Execute custom bash commands for tool chaining and complex operations"
-    binary: /bin/bash
-    category: utility
-    risk_level: high
-    default_args: ["-c"]
-    parameters:
-      command:
-        type: string
-        required: true
-        positional: true
-        description: "Bash command to execute"
 
   gobuster:
     name: gobuster

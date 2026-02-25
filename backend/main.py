@@ -193,10 +193,6 @@ class ToolExecRequest(BaseModel):
     parameters: dict = {}
     timeout: int = 300
 
-class BashExecRequest(BaseModel):
-    session_id: str
-    command: str
-    timeout: int = 300
 
 class AutoModeRequest(BaseModel):
     session_id: str
@@ -488,6 +484,8 @@ async def install_pip_tool(body: dict = Body(...)):
 @app.post("/api/tools/execute")
 async def execute_tool(req: ToolExecRequest, current_user=Depends(get_optional_user)):
     """Execute a tool asynchronously in the toolbox container."""
+    if req.tool == "bash":
+        raise HTTPException(403, "Direct bash execution is not allowed")
     session = session_mgr.get(req.session_id)
     if not session:
         raise HTTPException(404, "Session not found")
@@ -569,42 +567,6 @@ async def _poll_task_result(session_id: str, task_id: str, tool: str, session):
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
 
-@app.post("/api/tools/execute/bash")
-async def execute_bash(req: BashExecRequest, current_user=Depends(get_optional_user)):
-    """Execute a raw bash command asynchronously."""
-    session = session_mgr.get(req.session_id)
-    if not session:
-        raise HTTPException(404, "Session not found")
-
-    task_id = str(uuid.uuid4())[:8]
-    username = current_user.username if current_user else None
-
-    session.add_event("bash_exec", {
-        "command": req.command,
-        "task_id": task_id,
-    }, user=username)
-
-    await broadcast(req.session_id, {
-        "type": "tool_start",
-        "tool": "bash",
-        "task_id": task_id,
-        "parameters": {"command": req.command},
-        "user": username,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
-    
-    async with get_toolbox_client() as client:
-        resp = await client.post("/execute", json={
-            "tool": "bash",
-            "parameters": {"command": req.command},
-            "task_id": task_id,
-            "timeout": req.timeout,
-        })
-    
-    # Poll for result in background
-    asyncio.create_task(_poll_task_result(req.session_id, task_id, "bash", session))
-    
-    return {"task_id": task_id, "status": "started", "tool": "bash"}
 
 @app.get("/api/tasks/{task_id}")
 async def get_task(task_id: str):

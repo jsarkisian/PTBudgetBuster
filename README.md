@@ -95,7 +95,6 @@ Chat with Claude about your engagement -- ask questions, request scans, get anal
 ### Manual Tool Execution
 
 - **Tools tab:** select from 30+ tools organized by category, fill in parameter forms, and execute
-- **Bash mode:** execute arbitrary commands, pipe tools together (e.g., `subfinder -d target.com | httpx -status-code`)
 - Real-time output streaming with ANSI color support
 - Default 300-second timeout per execution
 
@@ -193,12 +192,6 @@ One-click session export as a ZIP archive containing:
 | hydra | High | Fast network login brute-forcer supporting many protocols |
 | crackmapexec | High | Network pentest tool for SMB, WinRM, LDAP, MSSQL, SSH |
 | responder | High | LLMNR/NBT-NS/MDNS poisoner for credential capture |
-
-### Utility
-
-| Tool | Risk | Description |
-|------|------|-------------|
-| bash | High | Execute custom bash commands for tool chaining and complex operations |
 
 ## Administration
 

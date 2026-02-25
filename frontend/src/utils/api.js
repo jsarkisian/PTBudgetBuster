@@ -60,7 +60,6 @@ export const api = {
   // Tools
   listTools: () => request('/tools'),
   executeTool: (data) => request('/tools/execute', { method: 'POST', body: JSON.stringify(data) }),
-  executeBash: (data) => request('/tools/execute/bash', { method: 'POST', body: JSON.stringify(data) }),
 
   // Tasks
   getTask: (id) => request(`/tasks/${id}`),

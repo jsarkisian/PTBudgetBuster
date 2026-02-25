@@ -354,18 +354,6 @@ export default function App() {
     }
   };
 
-  const handleExecuteBash = async (command) => {
-    if (!activeSession) return;
-    try {
-      await api.executeBash({ session_id: activeSession.id, command });
-    } catch (err) {
-      setOutputs(prev => [...prev, {
-        id: `err-${Date.now()}`, type: 'result', tool: 'bash',
-        result: { status: 'error', output: '', error: err.message },
-        timestamp: new Date().toISOString(),
-      }]);
-    }
-  };
 
   const handleApproveScopeAddition = async (approvalId, approved) => {
     if (!activeSession) return;
@@ -426,7 +414,7 @@ export default function App() {
                   <ChatPanel messages={messages} onSend={handleSendChat} loading={chatLoading} session={activeSession} onCancel={handleCancelChat} />
                 )}
                 {activeTab === 'tools' && activeSession && (
-                  <ToolPanel tools={tools} onExecute={handleExecuteTool} onBash={handleExecuteBash} loading={toolLoading} session={activeSession} />
+                  <ToolPanel tools={tools} onExecute={handleExecuteTool} loading={toolLoading} session={activeSession} />
                 )}
                 {activeTab === 'findings' && activeSession && (
                   <FindingsPanel findings={findings} />

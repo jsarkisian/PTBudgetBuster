@@ -1,21 +1,14 @@
 import React, { useState } from 'react';
 
-export default function ToolPanel({ tools, onExecute, onBash, loading, session }) {
+export default function ToolPanel({ tools, onExecute, loading, session }) {
   const [selectedTool, setSelectedTool] = useState('');
   const [rawArgs, setRawArgs] = useState('');
-  const [bashCmd, setBashCmd] = useState('');
-  const [mode, setMode] = useState('tool'); // tool | bash
 
   const toolDef = tools[selectedTool];
 
   const handleExecute = async () => {
-    if (mode === 'bash') {
-      if (!bashCmd.trim()) return;
-      await onBash(bashCmd.trim());
-    } else {
-      if (!selectedTool) return;
-      await onExecute(selectedTool, { __raw_args__: rawArgs.trim() });
-    }
+    if (!selectedTool) return;
+    await onExecute(selectedTool, { __raw_args__: rawArgs.trim() });
   };
 
   const handleToolChange = (toolName) => {
@@ -32,38 +25,7 @@ export default function ToolPanel({ tools, onExecute, onBash, loading, session }
 
   return (
     <div className="h-full flex flex-col">
-      {/* Mode toggle */}
-      <div className="flex border-b border-dark-600 bg-dark-800">
-        <button
-          onClick={() => setMode('tool')}
-          className={`flex-1 py-2 text-xs font-medium ${mode === 'tool' ? 'text-accent-blue border-b border-accent-blue' : 'text-gray-400'}`}
-        >
-          Tool Selector
-        </button>
-        <button
-          onClick={() => setMode('bash')}
-          className={`flex-1 py-2 text-xs font-medium ${mode === 'bash' ? 'text-accent-blue border-b border-accent-blue' : 'text-gray-400'}`}
-        >
-          Bash Command
-        </button>
-      </div>
-
       <div className="flex-1 overflow-y-auto p-4">
-        {mode === 'bash' ? (
-          <div>
-            <label className="block text-xs text-gray-400 mb-2 font-medium">Command</label>
-            <textarea
-              value={bashCmd}
-              onChange={(e) => setBashCmd(e.target.value)}
-              placeholder="e.g., subfinder -d example.com | httpx -silent | nuclei -severity high"
-              className="input font-mono text-xs min-h-[120px]"
-              rows={5}
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              Use bash for complex commands, pipes, and tool chaining.
-            </p>
-          </div>
-        ) : (
           <div>
             {/* Tool selector */}
             <label className="block text-xs text-gray-400 mb-2 font-medium">Select Tool</label>
@@ -117,17 +79,16 @@ export default function ToolPanel({ tools, onExecute, onBash, loading, session }
               </div>
             )}
           </div>
-        )}
       </div>
 
       {/* Execute button */}
       <div className="p-3 border-t border-dark-600 bg-dark-900">
         <button
           onClick={handleExecute}
-          disabled={loading || (mode === 'tool' && !selectedTool) || (mode === 'bash' && !bashCmd.trim())}
+          disabled={loading || !selectedTool}
           className="btn-success w-full"
         >
-          {loading ? 'Executing...' : mode === 'bash' ? 'Run Command' : `Execute ${selectedTool || 'Tool'}`}
+          {loading ? 'Executing...' : `Execute ${selectedTool || 'Tool'}`}
         </button>
       </div>
     </div>
