@@ -55,6 +55,14 @@ async def lifespan(app: FastAPI):
     """Startup and teardown."""
     scheduler.start()
     await _restore_schedules()
+    # Write subfinder provider config if keys exist in settings
+    try:
+        _settings = _load_settings()
+        _providers = _settings.get("subfinder_providers", {})
+        if _providers:
+            _write_subfinder_provider_config(_providers)
+    except Exception:
+        pass
     yield
     scheduler.shutdown(wait=False)
 
@@ -1284,6 +1292,67 @@ async def set_font_size(body: dict = Body(...), admin=Depends(require_admin)):
     data = _load_settings()
     data["font_size"] = size
     _save_settings(data)
+    return {"status": "ok"}
+
+
+# ──────────────────────────────────────────────
+#  Subfinder Provider API Keys
+# ──────────────────────────────────────────────
+
+_SUBFINDER_PROVIDER_CONFIG_PATH = Path("/opt/pentest/data/subfinder-provider-config.yaml")
+
+_SUBFINDER_KNOWN_PROVIDERS = [
+    "shodan", "censys", "securitytrails", "virustotal", "chaos", "github",
+    "intelx", "fofa", "quake", "hunter", "zoomeye", "netlas", "criminalip",
+    "publicwww", "hunterhow", "binaryedge", "fullhunt", "bufferover", "c99",
+]
+
+def _write_subfinder_provider_config(providers: dict):
+    """Write subfinder provider-config.yaml from a dict like {"shodan": ["KEY1"], ...}."""
+    _SUBFINDER_PROVIDER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lines = []
+    active = [p for p, keys in providers.items() if keys]
+    if active:
+        lines.append("sources:")
+        for p in active:
+            lines.append(f"  - {p}")
+        lines.append("")
+        for p in active:
+            lines.append(f"{p}:")
+            for key in providers[p]:
+                lines.append(f"  - {key}")
+            lines.append("")
+    _SUBFINDER_PROVIDER_CONFIG_PATH.write_text("\n".join(lines))
+
+def _mask_key(key: str) -> str:
+    if len(key) <= 4:
+        return "****"
+    return "****" + key[-4:]
+
+@app.get("/api/settings/subfinder-providers")
+async def get_subfinder_providers(admin=Depends(require_admin)):
+    data = _load_settings()
+    providers = data.get("subfinder_providers", {})
+    masked = {}
+    for name, keys in providers.items():
+        masked[name] = [_mask_key(k) for k in keys]
+    return {"providers": masked, "known_providers": _SUBFINDER_KNOWN_PROVIDERS}
+
+@app.post("/api/settings/subfinder-providers")
+async def set_subfinder_providers(body: dict = Body(...), admin=Depends(require_admin)):
+    providers = body.get("providers", {})
+    # Validate: only accept known provider names with list-of-string values
+    cleaned = {}
+    for name, keys in providers.items():
+        if not isinstance(keys, list):
+            keys = [keys] if keys else []
+        keys = [k.strip() for k in keys if isinstance(k, str) and k.strip()]
+        if keys:
+            cleaned[name] = keys
+    data = _load_settings()
+    data["subfinder_providers"] = cleaned
+    _save_settings(data)
+    _write_subfinder_provider_config(cleaned)
     return {"status": "ok"}
 
 

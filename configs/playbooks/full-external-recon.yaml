@@ -8,7 +8,7 @@ builtin: true
 phases:
   - name: "Subdomain Enumeration"
     goal: "Discover all subdomains of the target domain using passive sources. Save results to a file for use in later phases."
-    tools_hint: ["subfinder", "theharvester"]
+    tools_hint: ["subfinder"]
     max_steps: 3
   - name: "DNS Resolution & Records"
     goal: "Resolve discovered subdomains to IP addresses and enumerate DNS records (A, AAAA, MX, NS, CNAME, TXT). Identify any interesting DNS misconfigurations."

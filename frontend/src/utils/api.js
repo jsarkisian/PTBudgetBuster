@@ -132,6 +132,8 @@ export const api = {
   setLogo: (logo) => request('/settings/logo', { method: 'POST', body: JSON.stringify({ logo }) }),
   deleteLogo: () => request('/settings/logo', { method: 'DELETE' }),
   setFontSize: (font_size) => request('/settings/font-size', { method: 'POST', body: JSON.stringify({ font_size }) }),
+  getSubfinderProviders: () => request('/settings/subfinder-providers'),
+  setSubfinderProviders: (providers) => request('/settings/subfinder-providers', { method: 'POST', body: JSON.stringify({ providers }) }),
 
   // Screenshots
   listScreenshots: (dir = '') => request(`/screenshots?directory=${encodeURIComponent(dir)}`),

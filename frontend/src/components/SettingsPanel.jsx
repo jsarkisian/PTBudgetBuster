@@ -32,6 +32,7 @@ export default function SettingsPanel({ logoUrl, onLogoChange, fontSize, onFontS
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         <BrandingSection logoUrl={logoUrl} onLogoChange={onLogoChange} onFlash={flash} onError={setError} />
         <FontSizeSection fontSize={fontSize} onFontSizeChange={onFontSizeChange} onFlash={flash} onError={setError} />
+        <SubfinderProvidersSection onFlash={flash} onError={setError} />
 
         {/* Playbooks section */}
         <div className="mt-6 border-t border-gray-700 pt-6">
@@ -166,6 +167,111 @@ function FontSizeSection({ fontSize, onFontSizeChange, onFlash, onError }) {
       <p className="text-xs text-gray-600 mt-2">
         Applies to all users. Current: {options.find(o => o.value === fontSize)?.px || '16px'}
       </p>
+    </div>
+  );
+}
+
+function SubfinderProvidersSection({ onFlash, onError }) {
+  const [providers, setProviders] = useState({});
+  const [knownProviders, setKnownProviders] = useState([]);
+  const [inputs, setInputs] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.getSubfinderProviders()
+      .then(data => {
+        setKnownProviders(data.known_providers || []);
+        const saved = data.providers || {};
+        setProviders(saved);
+        // Pre-fill inputs with masked values
+        const init = {};
+        for (const p of data.known_providers || []) {
+          init[p] = (saved[p] && saved[p][0]) || '';
+        }
+        setInputs(init);
+        setLoaded(true);
+      })
+      .catch(err => onError(err.message));
+  }, []);
+
+  const handleChange = (provider, value) => {
+    setInputs(prev => ({ ...prev, [provider]: value }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const toSave = {};
+      for (const [name, key] of Object.entries(inputs)) {
+        const trimmed = key.trim();
+        // Skip empty and unchanged masked values
+        if (!trimmed || trimmed.startsWith('****')) continue;
+        toSave[name] = [trimmed];
+      }
+      // Preserve existing keys for providers that still show masked values
+      for (const [name, keys] of Object.entries(providers)) {
+        if (keys.length > 0 && inputs[name]?.startsWith('****')) {
+          // User didn't change this one — keep it on server (don't send, backend keeps it)
+        }
+      }
+      await api.setSubfinderProviders(toSave);
+      onFlash('Subfinder provider keys saved');
+      // Reload to get new masked values
+      const data = await api.getSubfinderProviders();
+      setProviders(data.providers || {});
+      const updated = {};
+      for (const p of data.known_providers || []) {
+        updated[p] = (data.providers[p] && data.providers[p][0]) || '';
+      }
+      setInputs(updated);
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!loaded) return null;
+
+  const configuredCount = Object.keys(providers).filter(p => providers[p]?.length > 0).length;
+
+  return (
+    <div>
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Subfinder Provider API Keys</h3>
+      <p className="text-xs text-gray-600 mb-3">
+        Configure API keys to unlock additional passive subdomain sources.
+        {configuredCount > 0 && (
+          <span className="ml-1 text-accent-green">{configuredCount} configured</span>
+        )}
+      </p>
+      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+        {knownProviders.map(provider => (
+          <div key={provider} className="flex items-center gap-2">
+            <label className="text-xs text-gray-400 w-28 shrink-0 font-mono">{provider}</label>
+            <input
+              type="text"
+              value={inputs[provider] || ''}
+              onChange={e => handleChange(provider, e.target.value)}
+              onFocus={() => {
+                // Clear masked value on focus so user can type new key
+                if (inputs[provider]?.startsWith('****')) {
+                  handleChange(provider, '');
+                }
+              }}
+              placeholder="API key"
+              className="flex-1 bg-dark-800 border border-dark-600 rounded px-2 py-1.5 text-xs text-gray-300 font-mono placeholder:text-gray-700 focus:border-accent-blue/50 focus:outline-none"
+            />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="btn-primary text-xs px-4 py-1.5 mt-3 disabled:opacity-50"
+      >
+        {saving ? 'Saving...' : 'Save Provider Keys'}
+      </button>
     </div>
   );
 }

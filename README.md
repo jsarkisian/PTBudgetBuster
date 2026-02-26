@@ -160,7 +160,6 @@ One-click session export as a ZIP archive containing:
 | sslscan | Low | SSL/TLS configuration scanner |
 | masscan | High | Ultra-fast port scanner for large networks |
 | dnsrecon | Low | DNS enumeration and reconnaissance |
-| theharvester | Low | Email, subdomain, and people name harvester |
 | fierce | Low | DNS reconnaissance tool for locating non-contiguous IP space |
 | nbtscan | Low | NetBIOS name scanner |
 | snmpwalk | Low | SNMP MIB tree walker for network device enumeration |
@@ -376,34 +375,7 @@ This replaces the need for nginx + Let's Encrypt for tailnet-only access.
 
 ### Subfinder API Keys
 
-Create `configs/provider-config.yaml` with your API keys:
-
-```yaml
-sources:
-  - shodan
-  - censys
-  - securitytrails
-  - virustotal
-
-shodan:
-  - YOUR_SHODAN_KEY
-
-censys:
-  - YOUR_CENSYS_ID:YOUR_CENSYS_SECRET
-
-securitytrails:
-  - YOUR_ST_KEY
-
-virustotal:
-  - YOUR_VT_KEY
-```
-
-Mount it in `docker-compose.yml` under the toolbox service:
-
-```yaml
-volumes:
-  - ./configs/provider-config.yaml:/root/.config/subfinder/provider-config.yaml
-```
+Configure subfinder provider API keys from the **Settings** tab in the GUI under **Subfinder Provider API Keys**. Supported providers include Shodan, Censys, SecurityTrails, VirusTotal, and many more. Keys are stored securely and automatically written to the shared volume for subfinder to use.
 
 ### Adding New Tools
 

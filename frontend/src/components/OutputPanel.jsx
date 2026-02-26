@@ -80,7 +80,7 @@ function summarizeOutput(tool, output, status, error) {
   const lines = output.split('\n').filter(l => l.trim());
 
   // Subdomain / DNS discovery
-  if (['subfinder', 'dnsx', 'dnsrecon', 'fierce', 'theharvester'].includes(tool)) {
+  if (['subfinder', 'dnsx', 'dnsrecon', 'fierce'].includes(tool)) {
     const hosts = lines.filter(l => /^[a-z0-9][a-z0-9.\-]*\.[a-z]{2,}$/i.test(l.trim()));
     if (hosts.length > 0) return `${hosts.length} host${hosts.length !== 1 ? 's' : ''} found`;
   }
@@ -168,7 +168,7 @@ function colorizeOutput(output) {
 // ── Tool metadata ──────────────────────────────────────────────────────
 
 const TOOL_ICONS = {
-  subfinder: '🔍', dnsx: '🔍', dnsrecon: '🔍', fierce: '🔍', theharvester: '🔍',
+  subfinder: '🔍', dnsx: '🔍', dnsrecon: '🔍', fierce: '🔍',
   httpx: '🌐', whatweb: '🌐', wafw00f: '🛡', gowitness: '📸',
   nmap: '🔭', naabu: '🔭', masscan: '🔭',
   nuclei: '⚡', nikto: '⚡', sqlmap: '⚡', wpscan: '⚡',

@@ -166,13 +166,6 @@ Types: `std` `rvl` `brt` `srv` `axfr` `snoop`
 fierce --domain example.com [--subdomains wordlist.txt] [--dns-servers 8.8.8.8]
 ```
 
-**theharvester** — OSINT: emails, subdomains, IPs from public sources
-```
-theHarvester -d example.com -b google,bing,crtsh,dnsdumpster -l 200
-theHarvester -d example.com -b all -l 500
-```
-Sources include: `google` `bing` `crtsh` `dnsdumpster` `virustotal` `otx` `securitytrails`
-
 ---
 
 ### HTTP Probing & Web Fingerprinting
@@ -469,7 +462,7 @@ uncover -q "http.title:\"example\"" -e shodan -silent
 6. Categorize findings by severity: Critical, High, Medium, Low, Informational.
 7. Provide actionable remediation advice for findings when asked.
 8. When in autonomous mode, each step has a PROPOSE phase (describe what you want to do, no tools) and an EXECUTE phase (run exactly what was proposed, nothing extra). In normal chat mode, NEVER auto-chain.
-9. **SCOPE EXPANSION**: After any tool that discovers new subdomains or hosts (subfinder, dnsx, katana, gobuster DNS mode, dnsrecon, theharvester, gospider, gau, etc.), call `add_to_scope` with the discovered hosts BEFORE presenting results. Only skip clearly out-of-scope or irrelevant hosts.
+9. **SCOPE EXPANSION**: After any tool that discovers new subdomains or hosts (subfinder, dnsx, katana, gobuster DNS mode, dnsrecon, gospider, gau, etc.), call `add_to_scope` with the discovered hosts BEFORE presenting results. Only skip clearly out-of-scope or irrelevant hosts.
 
 ## Platform Notes
 - **Screenshots**: Use `httpx -ss` flag (ProjectDiscovery httpx, at `/root/go/bin/httpx`). Do NOT specify any screenshot path flag — the platform sets the working directory automatically and screenshots are saved and displayed per-task. Only take screenshots when the user explicitly asks for them. Example: `execute_bash` with `/root/go/bin/httpx -l /tmp/hosts.txt -ss -silent` or `execute_tool` with httpx and `__raw_args__: "-l /tmp/hosts.txt -ss -silent"`.
@@ -509,7 +502,7 @@ class PentestAgent:
                     "Execute a security testing tool. Pass the tool name and its CLI arguments as a single string in __raw_args__. "
                     "Available tools: subfinder, httpx, nuclei, naabu, nmap, katana, dnsx, tlsx, ffuf, gowitness, "
                     "waybackurls, whatweb, wafw00f, sslscan, nikto, masscan, gobuster, sqlmap, hydra, wpscan, "
-                    "enum4linux, smbclient, smbmap, dnsrecon, theharvester, gospider, gau, crackmapexec,"
+                    "enum4linux, smbclient, smbmap, dnsrecon, gospider, gau, crackmapexec,"
                     "responder, nbtscan, snmpwalk, fierce, wfuzz, testssl, uncover, naabu. "
                     "Example: tool='subfinder', parameters={'__raw_args__': '-d example.com -silent'}"
                 ),
@@ -592,7 +585,7 @@ class PentestAgent:
             },
             {
                 "name": "add_to_scope",
-                "description": "Add newly discovered subdomains, hosts, or IPs to the engagement scope so they are included in future testing. Call this after any tool that discovers new hosts or subdomains (subfinder, dnsx, katana, gobuster DNS, dnsrecon, theharvester, etc.).",
+                "description": "Add newly discovered subdomains, hosts, or IPs to the engagement scope so they are included in future testing. Call this after any tool that discovers new hosts or subdomains (subfinder, dnsx, katana, gobuster DNS, dnsrecon, etc.).",
                 "input_schema": {
                     "type": "object",
                     "properties": {

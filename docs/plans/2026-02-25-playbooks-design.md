@@ -19,7 +19,7 @@ builtin: true
 phases:
   - name: "Subdomain Enumeration"
     goal: "Discover all subdomains of the target domain using passive sources"
-    tools_hint: ["subfinder", "amass", "theharvester"]
+    tools_hint: ["subfinder"]
     max_steps: 3
   - name: "DNS Resolution & Records"
     goal: "Resolve discovered subdomains and enumerate DNS records"

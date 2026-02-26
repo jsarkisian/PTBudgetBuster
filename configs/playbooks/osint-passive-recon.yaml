@@ -10,10 +10,6 @@ phases:
     goal: "Discover subdomains using passive sources only. Do not perform any active scanning or brute-forcing."
     tools_hint: ["subfinder"]
     max_steps: 2
-  - name: "OSINT Harvesting"
-    goal: "Harvest emails, names, subdomains, and IPs from public sources like search engines and certificate transparency logs."
-    tools_hint: ["theharvester"]
-    max_steps: 2
   - name: "Historical URL Discovery"
     goal: "Collect known URLs from the Wayback Machine, Common Crawl, and other archives. Look for interesting endpoints and old pages."
     tools_hint: ["gau", "waybackurls"]

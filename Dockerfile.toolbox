@@ -42,7 +42,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dnsenum \
     wfuzz \
     arjun \
-    theharvester \
     recon-ng \
     responder \
     crackmapexec \
