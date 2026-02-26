@@ -1,0 +1,28 @@
+id: osint-passive-recon
+name: "OSINT & Passive Recon"
+description: "Passive reconnaissance only — subdomain discovery, OSINT harvesting, historical URL collection, DNS records, and TLS certificate analysis"
+category: reconnaissance
+approval_default: auto
+builtin: true
+
+phases:
+  - name: "Subdomain Enumeration"
+    goal: "Discover subdomains using passive sources only. Do not perform any active scanning or brute-forcing."
+    tools_hint: ["subfinder", "amass"]
+    max_steps: 2
+  - name: "OSINT Harvesting"
+    goal: "Harvest emails, names, subdomains, and IPs from public sources like search engines and certificate transparency logs."
+    tools_hint: ["theharvester"]
+    max_steps: 2
+  - name: "Historical URL Discovery"
+    goal: "Collect known URLs from the Wayback Machine, Common Crawl, and other archives. Look for interesting endpoints and old pages."
+    tools_hint: ["gau", "waybackurls"]
+    max_steps: 2
+  - name: "DNS Records"
+    goal: "Enumerate DNS records for the target domain — A, AAAA, MX, NS, CNAME, TXT, SOA. Look for misconfigurations."
+    tools_hint: ["dnsx", "dnsrecon", "fierce"]
+    max_steps: 2
+  - name: "TLS Certificate Analysis"
+    goal: "Analyze TLS certificates for the target's hosts. Look for SANs, expired certs, mismatched names, and certificate transparency data."
+    tools_hint: ["tlsx", "sslscan"]
+    max_steps: 2

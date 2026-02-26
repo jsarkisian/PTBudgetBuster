@@ -1,0 +1,28 @@
+id: internal-network-assessment
+name: "Internal Network Assessment"
+description: "Assess an internal network — host discovery, port scanning, service enumeration, SMB/Windows enumeration, and vulnerability scanning"
+category: internal
+approval_default: manual
+builtin: true
+
+phases:
+  - name: "Host Discovery"
+    goal: "Discover live hosts on the target network using ping sweeps and ARP scanning."
+    tools_hint: ["nmap", "naabu"]
+    max_steps: 2
+  - name: "Port Scanning"
+    goal: "Scan discovered hosts for open ports with service version detection. Focus on common service ports."
+    tools_hint: ["nmap", "naabu"]
+    max_steps: 3
+  - name: "Service Enumeration"
+    goal: "Enumerate discovered services — identify web servers, databases, mail servers, and other network services."
+    tools_hint: ["httpx", "whatweb", "snmpwalk"]
+    max_steps: 2
+  - name: "SMB & Windows Enumeration"
+    goal: "Enumerate SMB shares, users, groups, and password policies on any Windows/Samba hosts found."
+    tools_hint: ["enum4linux", "smbmap", "smbclient", "crackmapexec", "nbtscan"]
+    max_steps: 3
+  - name: "Vulnerability Scanning"
+    goal: "Run vulnerability scans against discovered services. Focus on known CVEs and misconfigurations."
+    tools_hint: ["nuclei", "nmap"]
+    max_steps: 2

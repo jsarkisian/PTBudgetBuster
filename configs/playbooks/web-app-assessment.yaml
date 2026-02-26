@@ -1,0 +1,28 @@
+id: web-app-assessment
+name: "Web Application Assessment"
+description: "Assess a web application — HTTP fingerprinting, directory discovery, crawling, vulnerability scanning, and SSL/TLS analysis"
+category: web
+approval_default: manual
+builtin: true
+
+phases:
+  - name: "HTTP Fingerprinting"
+    goal: "Probe the target web application for status codes, technologies, server headers, and WAF detection."
+    tools_hint: ["httpx", "whatweb", "wafw00f"]
+    max_steps: 2
+  - name: "Directory & File Discovery"
+    goal: "Brute-force common directories and files on the target web server. Look for admin panels, backup files, and hidden endpoints."
+    tools_hint: ["ffuf", "gobuster"]
+    max_steps: 3
+  - name: "Web Crawling"
+    goal: "Crawl the target application to discover endpoints, URLs, and JavaScript files. Include JS parsing for hidden API endpoints."
+    tools_hint: ["katana", "gospider"]
+    max_steps: 2
+  - name: "Vulnerability Scanning"
+    goal: "Run vulnerability scans focused on web application issues — XSS, SQLi, misconfigurations, exposed panels, and known CVEs."
+    tools_hint: ["nuclei", "nikto"]
+    max_steps: 3
+  - name: "SSL/TLS Analysis"
+    goal: "Analyze the target's SSL/TLS configuration for weak ciphers, expired certificates, and protocol vulnerabilities."
+    tools_hint: ["tlsx", "sslscan", "testssl"]
+    max_steps: 2

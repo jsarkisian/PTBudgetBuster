@@ -1,0 +1,28 @@
+id: full-external-recon
+name: "Full External Recon"
+description: "Complete reconnaissance of external-facing assets — subdomain discovery, DNS enumeration, HTTP probing, port scanning, and vulnerability scanning"
+category: reconnaissance
+approval_default: auto
+builtin: true
+
+phases:
+  - name: "Subdomain Enumeration"
+    goal: "Discover all subdomains of the target domain using passive sources. Save results to a file for use in later phases."
+    tools_hint: ["subfinder", "amass", "theharvester"]
+    max_steps: 3
+  - name: "DNS Resolution & Records"
+    goal: "Resolve discovered subdomains to IP addresses and enumerate DNS records (A, AAAA, MX, NS, CNAME, TXT). Identify any interesting DNS misconfigurations."
+    tools_hint: ["dnsx", "dnsrecon"]
+    max_steps: 2
+  - name: "HTTP Probing"
+    goal: "Probe discovered hosts for live web servers. Identify status codes, page titles, technologies, and server headers."
+    tools_hint: ["httpx", "whatweb"]
+    max_steps: 2
+  - name: "Port Scanning"
+    goal: "Scan discovered hosts for open ports and identify running services with version detection."
+    tools_hint: ["naabu", "nmap"]
+    max_steps: 2
+  - name: "Vulnerability Scanning"
+    goal: "Run vulnerability scans against discovered web services using template-based scanning. Focus on medium, high, and critical severity."
+    tools_hint: ["nuclei"]
+    max_steps: 2
