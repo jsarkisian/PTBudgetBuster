@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function ChatPanel({ messages, onSend, loading, session, onCancel }) {
+export default function ChatPanel({ messages, onSend, loading, session, onCancel, streamingMessage }) {
   const [input, setInput] = useState('');
   const messagesEnd = useRef(null);
 
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, streamingMessage]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -51,7 +51,22 @@ export default function ChatPanel({ messages, onSend, loading, session, onCancel
           <MessageBubble key={i} message={msg} />
         ))}
 
-        {loading && (
+        {/* Streaming message from WebSocket */}
+        {streamingMessage && streamingMessage.content && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] rounded-lg px-4 py-3 text-sm leading-relaxed bg-dark-800 text-gray-200 border border-dark-600">
+              <div className="text-xs font-medium mb-1 text-accent-cyan">AI Assistant</div>
+              <div className="whitespace-pre-wrap">
+                {streamingMessage.content}
+                {streamingMessage.streaming && (
+                  <span className="inline-block w-2 h-4 bg-accent-cyan/70 ml-0.5 animate-pulse" />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {loading && !streamingMessage?.content && (
           <div className="flex items-center gap-3 text-gray-400 text-sm">
             <div className="flex gap-1">
               <span className="w-2 h-2 bg-accent-blue rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -62,6 +77,17 @@ export default function ChatPanel({ messages, onSend, loading, session, onCancel
             <button
               onClick={onCancel}
               className="ml-2 px-3 py-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
+            >
+              ■ Stop
+            </button>
+          </div>
+        )}
+
+        {loading && streamingMessage?.content && (
+          <div className="flex items-center gap-2 text-gray-500 text-xs">
+            <button
+              onClick={onCancel}
+              className="px-3 py-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
             >
               ■ Stop
             </button>

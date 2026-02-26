@@ -15,7 +15,7 @@ function pairOutputs(outputs) {
     if (entry.type === 'start') {
       const idx = result.length;
       idToIdx.set(entry.id, idx);
-      result.push({ type: 'execution', id: entry.id, tool: entry.tool, start: entry, result: null });
+      result.push({ type: 'execution', id: entry.id, tool: entry.tool, start: entry, result: null, liveOutput: entry.liveOutput || '', liveError: entry.liveError || '' });
     } else if (entry.type === 'result') {
       const idx = idToIdx.get(entry.id);
       if (idx !== undefined) {
@@ -442,10 +442,28 @@ function StatusLine({ entry }) {
   );
 }
 
+// ── Elapsed timer component ─────────────────────────────────────────────
+
+function ElapsedTimer({ startTime }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const start = startTime ? new Date(startTime).getTime() : Date.now();
+    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [startTime]);
+
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const display = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  return <span className="tabular-nums">{display}</span>;
+}
+
 // ── Execution card: unified start+result view ──────────────────────────
 
 function ExecutionCard({ entry, onImageClick }) {
-  const { start, result, tool } = entry;
+  const { start, result, tool, liveOutput = '', liveError = '' } = entry;
   const pending = !result;
   const taskResult = result?.result || {};
   // Bash commands often return non-zero without being real failures (grep no match, etc.)
@@ -572,20 +590,32 @@ function ExecutionCard({ entry, onImageClick }) {
             </div>
           </div>
 
-          {/* Running indicator (no result yet) */}
+          {/* Running indicator with elapsed timer + live output */}
           {pending && (
-            <div className="px-3 py-3 flex items-center gap-2.5 text-xs text-gray-500">
-              <span className="flex gap-0.5">
-                {[0, 150, 300].map(d => (
-                  <span
-                    key={d}
-                    className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce"
-                    style={{ animationDelay: `${d}ms` }}
-                  />
-                ))}
-              </span>
-              Running…
-            </div>
+            <>
+              <div className="px-3 py-3 flex items-center gap-2.5 text-xs text-gray-500">
+                <span className="flex gap-0.5">
+                  {[0, 150, 300].map(d => (
+                    <span
+                      key={d}
+                      className="w-1.5 h-1.5 bg-accent-blue rounded-full animate-bounce"
+                      style={{ animationDelay: `${d}ms` }}
+                    />
+                  ))}
+                </span>
+                Running… <ElapsedTimer startTime={timestamp} />
+              </div>
+              {liveOutput && (
+                <div className="px-3 py-2">
+                  <div className="text-[10px] text-gray-600 mb-1 font-semibold uppercase tracking-wider">Live Output</div>
+                  <div className="bg-dark-950 rounded text-[11px] font-mono max-h-48 overflow-auto">
+                    {liveOutput.split('\n').filter(l => l.trim()).slice(-50).map((line, i) => (
+                      <div key={i} className="px-2.5 py-px leading-relaxed text-gray-400">{line}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {/* Screenshots */}

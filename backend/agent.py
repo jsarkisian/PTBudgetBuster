@@ -802,35 +802,66 @@ class PentestAgent:
         return "Unknown tool"
     
     async def chat(self, user_message: str) -> dict:
-        """Process a chat message with tool use support."""
-        
+        """Process a chat message with streaming and tool use support."""
+
         # Build messages with history
         messages = []
         for msg in self.session.get_chat_history():
             messages.append({"role": msg["role"], "content": msg["content"]})
-        
+
         # Add current message if not already in history
         if not messages or messages[-1].get("content") != user_message:
             messages.append({"role": "user", "content": user_message})
-        
+
         # Build system prompt with context
         system = SYSTEM_PROMPT + "\n\n## Current Engagement Context\n" + self.session.get_context_summary()
-        
+
         tool_calls = []
-        
+
         # Agentic loop - keep processing until no more tool calls
         while True:
-            response = await self.client.messages.create(
+            # Use streaming API to send deltas via WebSocket
+            collected_text = ""
+            collected_blocks = []  # full content blocks for tool processing
+
+            async with self.client.messages.stream(
                 model=self.model,
                 max_tokens=4096,
                 system=system,
                 tools=self._get_tools_schema(),
                 messages=messages,
-            )
-            
+            ) as stream:
+                async for event in stream:
+                    if event.type == "content_block_start":
+                        if event.content_block.type == "text":
+                            collected_blocks.append({"type": "text", "text": ""})
+                        elif event.content_block.type == "tool_use":
+                            collected_blocks.append({
+                                "type": "tool_use",
+                                "id": event.content_block.id,
+                                "name": event.content_block.name,
+                                "input": {},
+                            })
+                    elif event.type == "content_block_delta":
+                        if event.delta.type == "text_delta":
+                            collected_text += event.delta.text
+                            # Broadcast text delta to frontend
+                            await self.broadcast({
+                                "type": "chat_stream",
+                                "content": event.delta.text,
+                            })
+                        elif event.delta.type == "input_json_delta":
+                            pass  # JSON accumulation handled by final message
+
+                # Get the final complete message
+                response = await stream.get_final_message()
+
+            # Signal end of this streaming turn
+            await self.broadcast({"type": "chat_stream_end"})
+
             # Check if there are tool use blocks
             has_tool_use = any(block.type == "tool_use" for block in response.content)
-            
+
             if not has_tool_use:
                 # No more tool calls, extract final text
                 text_parts = [block.text for block in response.content if block.type == "text"]
@@ -838,11 +869,11 @@ class PentestAgent:
                     "content": "\n".join(text_parts),
                     "tool_calls": tool_calls,
                 }
-            
+
             # Process tool calls
             assistant_content = []
             tool_results = []
-            
+
             for block in response.content:
                 if block.type == "text":
                     assistant_content.append({"type": "text", "text": block.text})
@@ -853,22 +884,22 @@ class PentestAgent:
                         "name": block.name,
                         "input": block.input,
                     })
-                    
+
                     # Execute the tool
                     result = await self._execute_tool_call(block.name, block.input)
-                    
+
                     tool_calls.append({
                         "tool": block.name,
                         "input": block.input,
                         "result_preview": result[:500],
                     })
-                    
+
                     tool_results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
                         "content": result,
                     })
-            
+
             # Add assistant response and tool results to messages
             messages.append({"role": "assistant", "content": assistant_content})
             messages.append({"role": "user", "content": tool_results})

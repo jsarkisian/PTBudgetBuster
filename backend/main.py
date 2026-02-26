@@ -542,14 +542,33 @@ async def execute_tool(req: ToolExecRequest, current_user=Depends(get_optional_u
 
 
 async def _poll_task_result(session_id: str, task_id: str, tool: str, session):
-    """Background poll for task completion, then broadcast result."""
+    """Background poll for task completion, broadcast incremental output and final result."""
+    last_output_len = 0
+    last_error_len = 0
     for _ in range(600):  # Max 10 min polling
         await asyncio.sleep(1)
         try:
             async with get_toolbox_client() as client:
                 resp = await client.get(f"/task/{task_id}")
                 task = resp.json()
-            
+
+            # Broadcast incremental output deltas
+            cur_output = task.get("output", "")
+            cur_error = task.get("error", "")
+            if len(cur_output) > last_output_len or len(cur_error) > last_error_len:
+                delta_out = cur_output[last_output_len:]
+                delta_err = cur_error[last_error_len:]
+                last_output_len = len(cur_output)
+                last_error_len = len(cur_error)
+                await broadcast(session_id, {
+                    "type": "tool_output",
+                    "task_id": task_id,
+                    "tool": tool,
+                    "output": delta_out,
+                    "error": delta_err,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+
             if task.get("status") in ("completed", "failed", "error", "timeout", "killed"):
                 session.add_event("tool_result", {
                     "task_id": task_id,
@@ -557,7 +576,7 @@ async def _poll_task_result(session_id: str, task_id: str, tool: str, session):
                     "status": task.get("status"),
                     "output": task.get("output", "")[:5000],
                 })
-                
+
                 await broadcast(session_id, {
                     "type": "tool_result",
                     "task_id": task_id,
@@ -568,7 +587,7 @@ async def _poll_task_result(session_id: str, task_id: str, tool: str, session):
                 return
         except Exception:
             pass
-    
+
     # Timeout fallback
     await broadcast(session_id, {
         "type": "tool_result",

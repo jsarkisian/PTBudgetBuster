@@ -95,6 +95,9 @@ export default function App() {
 
   // ALL HOOKS MUST BE ABOVE ANY EARLY RETURNS
 
+  // Streaming chat message state
+  const [streamingChat, setStreamingChat] = useState(null);
+
   const handleWsMessage = useCallback((event) => {
     switch (event.type) {
       case 'tool_start':
@@ -106,6 +109,15 @@ export default function App() {
           timestamp: event.timestamp,
         }]);
         break;
+      case 'tool_output':
+        // Incremental tool output — append to matching pending entry
+        if (autoModeRef.current && event.source === 'ai_agent') break;
+        setOutputs(prev => prev.map(o =>
+          o.id === event.task_id && o.type === 'start'
+            ? { ...o, liveOutput: (o.liveOutput || '') + (event.output || ''), liveError: (o.liveError || '') + (event.error || '') }
+            : o
+        ));
+        break;
       case 'tool_result':
         // Always count results for screenshots/files refresh
         setToolResultCount(n => n + 1);
@@ -116,6 +128,18 @@ export default function App() {
           result: event.result, source: event.source || 'manual',
           timestamp: event.timestamp,
         }]);
+        break;
+      case 'chat_stream':
+        setStreamingChat(prev => ({
+          role: 'assistant',
+          content: (prev?.content || '') + event.content,
+          streaming: true,
+          timestamp: prev?.timestamp || new Date().toISOString(),
+        }));
+        break;
+      case 'chat_stream_end':
+        // Keep the streamed message visible until the HTTP response replaces it
+        setStreamingChat(prev => prev ? { ...prev, streaming: false } : null);
         break;
       case 'new_finding':
         setFindings(prev => [...prev, event.finding]);
@@ -261,7 +285,7 @@ export default function App() {
   // Load data after auth
   useEffect(() => {
     if (!currentUser) return;
-    api.health().then(setHealth).catch(() => {});
+    api.health().then(setHealth).catch(err => console.warn('health check failed:', err));
     api.listSessions().then(data => {
       setSessions(data);
       if (restoredSessionId) {
@@ -269,13 +293,13 @@ export default function App() {
         if (match) setActiveSession(match);
         setRestoredSessionId(null);
       }
-    }).catch(() => {});
-    api.listTools().then(data => setTools(data.tools || {})).catch(() => {});
+    }).catch(err => console.warn('session list failed:', err));
+    api.listTools().then(data => setTools(data.tools || {})).catch(err => console.warn('tools list failed:', err));
     api.getSettings().then(data => {
       setLogoUrl(data.logo || null);
       if (data.font_size) setFontSize(data.font_size);
-    }).catch(() => {});
-    api.listClients().then(setClients).catch(() => {});
+    }).catch(err => console.warn('settings load failed:', err));
+    api.listClients().then(setClients).catch(err => console.warn('clients load failed:', err));
   }, [currentUser]);
 
   // Load session details when active session changes
@@ -370,7 +394,7 @@ export default function App() {
           toolCalls: data.auto_pending_approval.tool_calls,
         });
       }
-    }).catch(() => {});
+    }).catch(err => console.warn('session detail load failed:', err));
   }, [activeSession?.id]);
 
   // NOW safe to do early returns
@@ -416,14 +440,18 @@ export default function App() {
     const abortController = new AbortController();
     chatAbortRef.current = abortController;
     setChatLoading(true);
+    setStreamingChat(null);
     setMessages(prev => [...prev, { role: 'user', content: message, timestamp: new Date().toISOString() }]);
     try {
       const response = await api.chat({ message, session_id: activeSession.id }, abortController.signal);
+      // Replace streamed message with final authoritative response
+      setStreamingChat(null);
       setMessages(prev => [...prev, {
         role: 'assistant', content: response.content,
         toolCalls: response.tool_calls, timestamp: new Date().toISOString(),
       }]);
     } catch (err) {
+      setStreamingChat(null);
       if (err.name === 'AbortError') {
         setMessages(prev => [...prev, { role: 'error', content: 'Request cancelled.', timestamp: new Date().toISOString() }]);
       } else {
@@ -442,6 +470,7 @@ export default function App() {
 
   const handleExecuteTool = async (tool, parameters) => {
     if (!activeSession) return;
+    setToolLoading(true);
     try {
       await api.executeTool({ session_id: activeSession.id, tool, parameters });
     } catch (err) {
@@ -450,6 +479,8 @@ export default function App() {
         result: { status: 'error', output: '', error: err.message },
         timestamp: new Date().toISOString(),
       }]);
+    } finally {
+      setToolLoading(false);
     }
   };
 
@@ -481,6 +512,12 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-dark-950">
+      {/* WebSocket disconnection banner */}
+      {activeSession && !connected && (
+        <div className="bg-yellow-600/90 text-white text-xs text-center py-1 px-3 shrink-0">
+          Connection lost — reconnecting...
+        </div>
+      )}
       <Header health={health} connected={connected} session={activeSession} currentUser={currentUser} onLogout={handleLogout} logoUrl={logoUrl} onLogoClick={() => setActiveSession(null)} />
       <div className="flex-1 flex overflow-hidden">
         <SessionSidebar
@@ -510,7 +547,7 @@ export default function App() {
             <div className="flex-1 flex overflow-hidden" ref={splitContainerRef}>
               <div className="overflow-hidden" style={{ flex: '1 1 0', minWidth: 0 }}>
                 {activeTab === 'chat' && activeSession && (
-                  <ChatPanel messages={messages} onSend={handleSendChat} loading={chatLoading} session={activeSession} onCancel={handleCancelChat} />
+                  <ChatPanel messages={messages} onSend={handleSendChat} loading={chatLoading} session={activeSession} onCancel={handleCancelChat} streamingMessage={streamingChat} />
                 )}
                 {activeTab === 'tools' && activeSession && (
                   <ToolPanel tools={tools} onExecute={handleExecuteTool} loading={toolLoading} session={activeSession} />

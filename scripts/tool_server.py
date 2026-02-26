@@ -176,7 +176,7 @@ def build_command(tool_name: str, parameters: dict) -> list:
 
 async def run_tool_async(task_id: str, cmd: list, stdin_data: str = None,
                          timeout: int = 300, use_shell: bool = False, cwd: str = None):
-    """Execute a tool asynchronously and track its output."""
+    """Execute a tool asynchronously and track its output incrementally."""
     task = running_tasks[task_id]
     task["status"] = "running"
 
@@ -198,25 +198,39 @@ async def run_tool_async(task_id: str, cmd: list, stdin_data: str = None,
                 stdin=asyncio.subprocess.PIPE if stdin_data else None,
                 cwd=cwd,
             )
-        
+
         task["pid"] = process.pid
-        
-        stdin_bytes = stdin_data.encode() if stdin_data else None
-        
+
+        # Write stdin if needed, then close
+        if stdin_data and process.stdin:
+            process.stdin.write(stdin_data.encode())
+            await process.stdin.drain()
+            process.stdin.close()
+
+        async def _read_stream(stream, key):
+            """Read a stream line-by-line and append to task[key] incrementally."""
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                task[key] += line.decode(errors="replace")
+
         try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=stdin_bytes),
-                timeout=timeout
+            await asyncio.wait_for(
+                asyncio.gather(
+                    _read_stream(process.stdout, "output"),
+                    _read_stream(process.stderr, "error"),
+                    process.wait(),
+                ),
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
             process.kill()
             await process.wait()
             task["status"] = "timeout"
-            task["error"] = f"Task timed out after {timeout}s"
+            task["error"] += f"\nTask timed out after {timeout}s"
             return
-        
-        task["output"] = stdout.decode(errors="replace")
-        task["error"] = stderr.decode(errors="replace")
+
         task["return_code"] = process.returncode
         task["status"] = "completed" if process.returncode == 0 else "failed"
 
