@@ -28,7 +28,7 @@ class Session:
         self.events: list[dict] = []
         self.findings: list[dict] = []
         
-        # Autonomous mode state (not persisted)
+        # Autonomous mode state (persisted for history restoration)
         self.auto_mode: bool = False
         self.auto_objective: str = ""
         self.auto_max_steps: int = 10
@@ -156,6 +156,14 @@ CURRENT FINDINGS:
             "messages": self.messages,
             "events": self.events,
             "findings": self.findings,
+            "auto_mode": self.auto_mode,
+            "auto_objective": self.auto_objective,
+            "auto_max_steps": self.auto_max_steps,
+            "auto_current_step": self.auto_current_step,
+            "auto_playbook_id": self.auto_playbook_id,
+            "auto_current_phase": self.auto_current_phase,
+            "auto_phase_count": self.auto_phase_count,
+            "auto_approval_mode": self.auto_approval_mode,
         }
     
     @classmethod
@@ -172,6 +180,16 @@ CURRENT FINDINGS:
         session.messages = data.get("messages", [])
         session.events = data.get("events", [])
         session.findings = data.get("findings", [])
+        # Restore autonomous state (note: auto_mode is set False since the loop
+        # isn't running after a restart — but history/progress is preserved)
+        session.auto_mode = False  # loop isn't running after restart
+        session.auto_objective = data.get("auto_objective", "")
+        session.auto_max_steps = data.get("auto_max_steps", 10)
+        session.auto_current_step = data.get("auto_current_step", 0)
+        session.auto_playbook_id = data.get("auto_playbook_id")
+        session.auto_current_phase = data.get("auto_current_phase", 0)
+        session.auto_phase_count = data.get("auto_phase_count", 0)
+        session.auto_approval_mode = data.get("auto_approval_mode", "manual")
         return session
     
     def tokenize_input(self, text: str) -> str:

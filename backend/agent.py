@@ -905,12 +905,16 @@ class PentestAgent:
         if not session.auto_mode:
             return False
 
-        proposal_response = await self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=system,
-            messages=conversation,
-        )
+        try:
+            proposal_response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                system=system,
+                messages=conversation,
+            )
+        except Exception as e:
+            await _status(f"Error calling AI API: {e}")
+            raise
 
         if not session.auto_mode:
             return False
@@ -943,7 +947,7 @@ class PentestAgent:
                 "approved": True,
                 "resolved": True,
             }
-            await self.broadcast({
+            step_pending_event = {
                 "type": "auto_step_pending",
                 "step_id": step_id,
                 "step_number": step,
@@ -951,13 +955,17 @@ class PentestAgent:
                 "tool_calls": [],
                 "auto_approved": True,
                 "timestamp": _ts(),
-            })
-            await self.broadcast({
+            }
+            session.add_event("auto_step_pending", step_pending_event)
+            await self.broadcast(step_pending_event)
+            step_decision_event = {
                 "type": "auto_step_decision",
                 "step_id": step_id,
                 "approved": True,
                 "timestamp": _ts(),
-            })
+            }
+            session.add_event("auto_step_decision", step_decision_event)
+            await self.broadcast(step_decision_event)
         else:
             # Manual: wait for user approval
             session.auto_pending_approval = {
@@ -969,14 +977,16 @@ class PentestAgent:
                 "resolved": False,
             }
 
-            await self.broadcast({
+            step_pending_event = {
                 "type": "auto_step_pending",
                 "step_id": step_id,
                 "step_number": step,
                 "description": proposal_text,
                 "tool_calls": [],
                 "timestamp": _ts(),
-            })
+            }
+            session.add_event("auto_step_pending", step_pending_event)
+            await self.broadcast(step_pending_event)
 
             timeout = 600
             elapsed = 0
@@ -989,12 +999,16 @@ class PentestAgent:
                     for user_msg in queued:
                         conversation.append({"role": "user", "content": user_msg})
                         await _status("Responding to your message…")
-                        reply_resp = await self.client.messages.create(
-                            model=self.model,
-                            max_tokens=1024,
-                            system=system,
-                            messages=conversation,
-                        )
+                        try:
+                            reply_resp = await self.client.messages.create(
+                                model=self.model,
+                                max_tokens=1024,
+                                system=system,
+                                messages=conversation,
+                            )
+                        except Exception as e:
+                            await _status(f"Error calling AI API: {e}")
+                            raise
                         reply_text = "\n".join(
                             b.text for b in reply_resp.content if b.type == "text"
                         ).strip()
@@ -1043,13 +1057,17 @@ class PentestAgent:
             if not session.auto_mode:
                 return False
 
-            response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                system=system,
-                tools=self._get_tools_schema(),
-                messages=conversation,
-            )
+            try:
+                response = await self.client.messages.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    system=system,
+                    tools=self._get_tools_schema(),
+                    messages=conversation,
+                )
+            except Exception as e:
+                await _status(f"Error calling AI API: {e}")
+                raise
 
             if not session.auto_mode:
                 return False
@@ -1124,14 +1142,16 @@ class PentestAgent:
 
         summary = "\n\n".join(step_text_parts) if step_text_parts else "(no summary)"
 
-        await self.broadcast({
+        step_complete_event = {
             "type": "auto_step_complete",
             "step_id": step_id,
             "step_number": step,
             "summary": summary,
             "tool_calls": step_tool_calls,
             "timestamp": _ts(),
-        })
+        }
+        session.add_event("auto_step_complete", step_complete_event)
+        await self.broadcast(step_complete_event)
 
         await _status(f"{label}: Complete")
         return True
@@ -1146,6 +1166,28 @@ class PentestAgent:
         async def _status(msg):
             await self.broadcast({"type": "auto_status", "message": msg, "timestamp": _ts()})
 
+        try:
+            await self._autonomous_loop_inner(playbook, session, _ts, _status)
+        except Exception as e:
+            print(f"[ERROR] Autonomous loop crashed: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                await _status(f"Autonomous mode error: {e}")
+            except Exception:
+                pass
+            session.auto_mode = False
+            try:
+                await self.broadcast({
+                    "type": "auto_mode_changed",
+                    "enabled": False,
+                    "timestamp": _ts(),
+                })
+            except Exception:
+                pass
+
+    async def _autonomous_loop_inner(self, playbook, session, _ts, _status):
+        """Inner autonomous loop — extracted so outer method can catch errors."""
         await _status(f"Starting autonomous testing: {session.auto_objective}")
 
         system = SYSTEM_PROMPT + "\n\n## Current Engagement Context\n" + session.get_context_summary()
@@ -1166,14 +1208,16 @@ class PentestAgent:
                 phase_tools = ", ".join(phase.get("tools_hint", []))
                 phase_max = phase.get("max_steps", 2)
 
-                await self.broadcast({
+                phase_event = {
                     "type": "auto_phase_changed",
                     "phase_number": phase_idx + 1,
                     "phase_count": len(phases),
                     "phase_name": phase_name,
                     "phase_goal": phase_goal,
                     "timestamp": _ts(),
-                })
+                }
+                session.add_event("auto_phase_changed", phase_event)
+                await self.broadcast(phase_event)
 
                 await _status(f"Phase {phase_idx + 1}/{len(phases)}: {phase_name}")
 

@@ -313,26 +313,62 @@ export default function App() {
       // Sync autonomous mode ref
       autoModeRef.current = !!data.auto_mode;
 
-      // Restore autonomous mode state if it's running
-      if (data.auto_mode) {
-        // Restore pending approval if one exists
-        if (data.auto_pending_approval && !data.auto_pending_approval.resolved) {
-          setPendingApproval({
-            stepId: data.auto_pending_approval.step_id,
-            stepNumber: data.auto_pending_approval.step_number,
-            description: data.auto_pending_approval.description,
-            toolCalls: data.auto_pending_approval.tool_calls,
-          });
-          // Show the pending step in history
-          setAutoHistory([{
-            type: 'step',
-            stepId: data.auto_pending_approval.step_id,
-            stepNumber: data.auto_pending_approval.step_number,
-            description: data.auto_pending_approval.description,
-            toolCalls: data.auto_pending_approval.tool_calls || [],
-            status: 'pending',
-          }]);
-        }
+      // Restore autonomous history from persisted events
+      const restoredAutoHistory = [];
+      if (data.events) {
+        // Track step states: step_id -> latest status
+        const stepStates = new Map();
+        data.events.forEach(evt => {
+          if (evt.type === 'auto_step_pending' && evt.data) {
+            stepStates.set(evt.data.step_id, {
+              type: 'step',
+              stepId: evt.data.step_id,
+              stepNumber: evt.data.step_number,
+              description: evt.data.description,
+              toolCalls: evt.data.tool_calls || [],
+              status: 'pending',
+              timestamp: evt.data.timestamp || evt.timestamp,
+            });
+          } else if (evt.type === 'auto_step_decision' && evt.data) {
+            const existing = stepStates.get(evt.data.step_id);
+            if (existing) {
+              existing.status = evt.data.approved ? 'approved' : 'rejected';
+            }
+          } else if (evt.type === 'auto_step_complete' && evt.data) {
+            const existing = stepStates.get(evt.data.step_id);
+            if (existing) {
+              existing.status = 'completed';
+              existing.summary = evt.data.summary;
+              existing.toolCalls = evt.data.tool_calls || existing.toolCalls;
+            }
+          } else if (evt.type === 'auto_phase_changed' && evt.data) {
+            restoredAutoHistory.push({
+              type: 'phase_change',
+              phase_number: evt.data.phase_number,
+              phase_count: evt.data.phase_count,
+              phase_name: evt.data.phase_name,
+              phase_goal: evt.data.phase_goal,
+              timestamp: evt.data.timestamp || evt.timestamp,
+            });
+          }
+        });
+        // Rebuild history in order (phases + steps interleaved by timestamp)
+        const allSteps = [...stepStates.values()];
+        const combined = [...restoredAutoHistory, ...allSteps];
+        combined.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+        restoredAutoHistory.length = 0;
+        restoredAutoHistory.push(...combined);
+      }
+      setAutoHistory(restoredAutoHistory);
+
+      // Restore pending approval if one exists and auto mode is running
+      if (data.auto_mode && data.auto_pending_approval && !data.auto_pending_approval.resolved) {
+        setPendingApproval({
+          stepId: data.auto_pending_approval.step_id,
+          stepNumber: data.auto_pending_approval.step_number,
+          description: data.auto_pending_approval.description,
+          toolCalls: data.auto_pending_approval.tool_calls,
+        });
       }
     }).catch(() => {});
   }, [activeSession?.id]);

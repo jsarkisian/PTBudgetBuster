@@ -658,6 +658,15 @@ async def delete_existing_playbook(playbook_id: str):
 #  Autonomous Mode endpoints
 # ──────────────────────────────────────────────
 
+def _on_auto_task_done(task: asyncio.Task, session_id: str):
+    """Callback when autonomous background task finishes (normally or with error)."""
+    exc = task.exception() if not task.cancelled() else None
+    if exc:
+        print(f"[ERROR] Autonomous task for session {session_id} failed: {exc}")
+    session = session_mgr.get(session_id)
+    if session and session.auto_mode:
+        session.auto_mode = False
+
 @app.post("/api/autonomous/start")
 async def start_autonomous(req: AutoModeRequest):
     """Start autonomous testing mode."""
@@ -688,7 +697,8 @@ async def start_autonomous(req: AutoModeRequest):
             session=session,
             broadcast_fn=lambda evt: broadcast(req.session_id, evt),
         )
-        asyncio.create_task(agent.autonomous_loop(playbook=playbook))
+        task = asyncio.create_task(agent.autonomous_loop(playbook=playbook))
+        task.add_done_callback(lambda t: _on_auto_task_done(t, req.session_id))
 
     await broadcast(req.session_id, {
         "type": "auto_mode_changed",
@@ -713,14 +723,16 @@ async def approve_step(req: ApprovalResponse):
     if session.auto_pending_approval and session.auto_pending_approval["step_id"] == req.step_id:
         session.auto_pending_approval["approved"] = req.approved
         session.auto_pending_approval["resolved"] = True
-        
-        await broadcast(req.session_id, {
+
+        decision_event = {
             "type": "auto_step_decision",
             "step_id": req.step_id,
             "approved": req.approved,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-        
+        }
+        session.add_event("auto_step_decision", decision_event)
+        await broadcast(req.session_id, decision_event)
+
         return {"status": "approved" if req.approved else "rejected"}
     
     raise HTTPException(404, "No pending approval found")
