@@ -120,10 +120,12 @@ export default function App() {
           description: event.description, toolCalls: event.tool_calls,
           status: 'pending', timestamp: event.timestamp,
         };
-        setPendingApproval({
-          stepId: event.step_id, stepNumber: event.step_number,
-          description: event.description, toolCalls: event.tool_calls,
-        });
+        if (!event.auto_approved) {
+          setPendingApproval({
+            stepId: event.step_id, stepNumber: event.step_number,
+            description: event.description, toolCalls: event.tool_calls,
+          });
+        }
         setAutoHistory(prev => [...prev, stepEntry]);
         setActiveSession(prev => prev ? { ...prev, auto_current_step: event.step_number } : prev);
         break;
@@ -152,6 +154,10 @@ export default function App() {
           auto_objective: event.objective || prev.auto_objective,
           auto_max_steps: event.max_steps || prev.auto_max_steps,
           auto_current_step: event.enabled ? 0 : prev.auto_current_step,
+          auto_playbook_id: event.playbook_id || null,
+          auto_phase_count: event.phase_count || 0,
+          auto_current_phase: 0,
+          auto_approval_mode: event.approval_mode || 'manual',
         } : prev);
         setOutputs(prev => [...prev, {
           id: `auto-${Date.now()}`, type: 'auto_status',
@@ -186,6 +192,21 @@ export default function App() {
           type: 'ai_reply', message: event.message, timestamp: event.timestamp,
         }]);
         setAutoCurrentStatus(null);
+        break;
+      case 'auto_phase_changed':
+        setAutoHistory(prev => [...prev, {
+          type: 'phase_change',
+          phase_number: event.phase_number,
+          phase_count: event.phase_count,
+          phase_name: event.phase_name,
+          phase_goal: event.phase_goal,
+          timestamp: event.timestamp,
+        }]);
+        setActiveSession(prev => prev ? {
+          ...prev,
+          auto_current_phase: event.phase_number,
+          auto_phase_count: event.phase_count,
+        } : prev);
         break;
       case 'scope_updated':
         setActiveSession(prev => {
@@ -463,7 +484,7 @@ export default function App() {
                 )}
                 {activeTab === 'auto' && activeSession && (
                   <AutoPanel session={activeSession} pendingApproval={pendingApproval} autoHistory={autoHistory} currentStatus={autoCurrentStatus}
-                    onStart={async (obj, steps) => { await api.startAutonomous({ session_id: activeSession.id, enabled: true, objective: obj, max_steps: steps }); }}
+                    onStart={async (objective, maxSteps, playbookId, approvalMode) => { await api.startAutonomous({ session_id: activeSession.id, enabled: true, objective, max_steps: maxSteps, playbook_id: playbookId, approval_mode: approvalMode }); }}
                     onStop={async () => { await api.stopAutonomous({ session_id: activeSession.id }); }}
                     onApprove={async (stepId, approved) => { await api.approveStep({ session_id: activeSession.id, step_id: stepId, approved }); setPendingApproval(null); }}
                     onSendMessage={async (msg) => { await api.sendAutoMessage({ session_id: activeSession.id, message: msg }); }}

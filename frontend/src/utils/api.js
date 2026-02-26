@@ -75,6 +75,13 @@ export const api = {
   approveScopeAddition: (data) => request('/scope/approve', { method: 'POST', body: JSON.stringify(data) }),
   sendAutoMessage: (data) => request('/autonomous/message', { method: 'POST', body: JSON.stringify(data) }),
 
+  // Playbooks
+  getPlaybooks: () => request('/playbooks'),
+  getPlaybook: (id) => request(`/playbooks/${id}`),
+  createPlaybook: (data) => request('/playbooks', { method: 'POST', body: JSON.stringify(data) }),
+  updatePlaybook: (id, data) => request(`/playbooks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deletePlaybook: (id) => request(`/playbooks/${id}`, { method: 'DELETE' }),
+
   // Files
   getWorkspace: () => request('/workspace'),
   listFiles: (dir = '') => request(`/files?directory=${encodeURIComponent(dir)}`),

@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { api } from '../utils/api';
 
 export default function AutoPanel({ session, pendingApproval, autoHistory = [], currentStatus, onStart, onStop, onApprove, onSendMessage }) {
   const [objective, setObjective] = useState('');
   const [maxSteps, setMaxSteps] = useState(10);
+  const [playbooks, setPlaybooks] = useState([]);
+  const [selectedPlaybook, setSelectedPlaybook] = useState(null);
+  const [approvalMode, setApprovalMode] = useState('manual');
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
   const historyRef = useRef(null);
@@ -18,9 +22,13 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
     }
   }, [autoHistory.length]);
 
+  useEffect(() => {
+    api.getPlaybooks().then(setPlaybooks).catch(() => {});
+  }, []);
+
   const handleStart = () => {
     if (!objective.trim()) return;
-    onStart(objective.trim(), maxSteps);
+    onStart(objective.trim(), maxSteps, selectedPlaybook?.id || null, approvalMode);
     setObjective('');
   };
 
@@ -49,6 +57,11 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
           </div>
           {isRunning && (
             <div className="flex items-center gap-2 shrink-0">
+              {session?.auto_phase_count > 0 && (
+                <span className="text-xs text-blue-400 font-medium">
+                  Phase {session.auto_current_phase || 1}/{session.auto_phase_count}
+                </span>
+              )}
               <span className="text-xs text-gray-400 font-mono">{step}/{maxS}</span>
               <span className="flex items-center gap-1 text-xs text-accent-green">
                 <span className="w-2 h-2 rounded-full bg-accent-green animate-pulse" />
@@ -60,6 +73,40 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
 
         {!isRunning ? (
           <div className="space-y-3">
+            <div className="mb-3">
+              <label className="block text-sm text-gray-400 mb-1">Mode</label>
+              <select
+                value={selectedPlaybook?.id || ''}
+                onChange={(e) => {
+                  const pb = playbooks.find(p => p.id === e.target.value);
+                  setSelectedPlaybook(pb || null);
+                  if (pb) {
+                    setObjective(pb.description);
+                    const total = pb.phases.reduce((sum, p) => sum + p.max_steps, 0);
+                    setMaxSteps(total);
+                    setApprovalMode(pb.approval_default || 'manual');
+                  } else {
+                    setApprovalMode('manual');
+                  }
+                }}
+                className="w-full bg-gray-700 text-white rounded px-3 py-2"
+              >
+                <option value="">Freeform (no playbook)</option>
+                {playbooks.map(pb => (
+                  <option key={pb.id} value={pb.id}>{pb.name}</option>
+                ))}
+              </select>
+            </div>
+            {selectedPlaybook && (
+              <div className="mb-3 p-2 bg-gray-800 rounded text-sm">
+                <div className="font-medium text-gray-300 mb-1">Phases:</div>
+                {selectedPlaybook.phases.map((p, i) => (
+                  <div key={i} className="text-gray-400 ml-2">
+                    {i + 1}. {p.name} <span className="text-gray-500">({p.max_steps} steps)</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div>
               <label className="block text-xs text-gray-400 mb-1 font-medium">Testing Objective</label>
               <textarea
@@ -84,6 +131,15 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
                 <span>Thorough (50)</span>
               </div>
             </div>
+            <label className="flex items-center gap-2 text-sm text-gray-300 mb-3">
+              <input
+                type="checkbox"
+                checked={approvalMode === 'auto'}
+                onChange={(e) => setApprovalMode(e.target.checked ? 'auto' : 'manual')}
+                className="rounded"
+              />
+              Auto-approve steps
+            </label>
             <button onClick={handleStart} disabled={!objective.trim()} className="btn-success w-full">
               Start Autonomous Testing
             </button>
@@ -111,6 +167,14 @@ export default function AutoPanel({ session, pendingApproval, autoHistory = [], 
             // Filter out noisy per-step live messages — those show in the status bar
             .filter(e => e.type !== 'status' || !e.message?.match(/^Step \d+:/))
             .map((entry, i) => {
+              if (entry.type === 'phase_change') return (
+                <div key={i} className="flex items-center gap-2 py-2 my-1 border-t border-b border-blue-500/30">
+                  <span className="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded text-xs font-medium">
+                    Phase {entry.phase_number}/{entry.phase_count}
+                  </span>
+                  <span className="text-white text-sm font-medium">{entry.phase_name}</span>
+                </div>
+              );
               if (entry.type === 'status') return <StatusEntry key={i} entry={entry} />;
               if (entry.type === 'user_message') return <UserMessageEntry key={i} entry={entry} />;
               if (entry.type === 'ai_reply') return <AiReplyEntry key={i} entry={entry} />;
