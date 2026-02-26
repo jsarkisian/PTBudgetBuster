@@ -33,6 +33,7 @@ services:
     volumes:
       - scan-data:/opt/pentest/data
       - ./backend:/app
+      - ./configs:/configs
       - /root/.ssh:/root/.ssh
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
