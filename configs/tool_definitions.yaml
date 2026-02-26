@@ -817,33 +817,6 @@ tools:
         flag: "-l"
         description: "Limit results"
 
-  amass:
-    name: amass
-    description: "Advanced subdomain enumeration and network mapping"
-    binary: /usr/bin/amass
-    category: reconnaissance
-    risk_level: low
-    default_args: []
-    parameters:
-      subcommand:
-        type: string
-        required: true
-        description: "Subcommand: enum, intel, viz, track, db"
-      domain:
-        type: string
-        required: false
-        flag: "-d"
-        description: "Target domain"
-      passive:
-        type: boolean
-        required: false
-        flag: "-passive"
-        description: "Passive enumeration only"
-      output:
-        type: string
-        required: false
-        flag: "-o"
-        description: "Output file"
 
   gospider:
     name: gospider

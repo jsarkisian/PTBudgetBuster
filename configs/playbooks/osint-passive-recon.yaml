@@ -8,7 +8,7 @@ builtin: true
 phases:
   - name: "Subdomain Enumeration"
     goal: "Discover subdomains using passive sources only. Do not perform any active scanning or brute-forcing."
-    tools_hint: ["subfinder", "amass"]
+    tools_hint: ["subfinder"]
     max_steps: 2
   - name: "OSINT Harvesting"
     goal: "Harvest emails, names, subdomains, and IPs from public sources like search engines and certificate transparency logs."

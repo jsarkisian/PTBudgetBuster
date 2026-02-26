@@ -78,7 +78,7 @@ function summarizeOutput(tool, output, status) {
   const lines = output.split('\n').filter(l => l.trim());
 
   // Subdomain / DNS discovery
-  if (['subfinder', 'amass', 'dnsx', 'dnsrecon', 'fierce', 'theharvester'].includes(tool)) {
+  if (['subfinder', 'dnsx', 'dnsrecon', 'fierce', 'theharvester'].includes(tool)) {
     const hosts = lines.filter(l => /^[a-z0-9][a-z0-9.\-]*\.[a-z]{2,}$/i.test(l.trim()));
     if (hosts.length > 0) return `${hosts.length} host${hosts.length !== 1 ? 's' : ''} found`;
   }
@@ -166,7 +166,7 @@ function colorizeOutput(output) {
 // ── Tool metadata ──────────────────────────────────────────────────────
 
 const TOOL_ICONS = {
-  subfinder: '🔍', dnsx: '🔍', amass: '🔍', dnsrecon: '🔍', fierce: '🔍', theharvester: '🔍',
+  subfinder: '🔍', dnsx: '🔍', dnsrecon: '🔍', fierce: '🔍', theharvester: '🔍',
   httpx: '🌐', whatweb: '🌐', wafw00f: '🛡', gowitness: '📸',
   nmap: '🔭', naabu: '🔭', masscan: '🔭',
   nuclei: '⚡', nikto: '⚡', sqlmap: '⚡', wpscan: '⚡',
@@ -181,7 +181,6 @@ const TOOL_ICONS = {
 const TOOL_DESCRIPTIONS = {
   subfinder: 'Subdomain enumeration',
   dnsx: 'DNS resolution',
-  amass: 'Subdomain enumeration',
   httpx: 'HTTP probing',
   nmap: 'Port & service scan',
   naabu: 'Port scan',

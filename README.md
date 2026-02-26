@@ -161,7 +161,6 @@ One-click session export as a ZIP archive containing:
 | masscan | High | Ultra-fast port scanner for large networks |
 | dnsrecon | Low | DNS enumeration and reconnaissance |
 | theharvester | Low | Email, subdomain, and people name harvester |
-| amass | Low | Advanced subdomain enumeration and network mapping |
 | fierce | Low | DNS reconnaissance tool for locating non-contiguous IP space |
 | nbtscan | Low | NetBIOS name scanner |
 | snmpwalk | Low | SNMP MIB tree walker for network device enumeration |

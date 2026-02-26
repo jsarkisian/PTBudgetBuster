@@ -35,7 +35,7 @@ function relativeTime(iso) {
 }
 
 const TOOL_ICONS = {
-  httpx: '🌐', subfinder: '🔍', amass: '🔍', dnsx: '🔍', dnsrecon: '🔍',
+  httpx: '🌐', subfinder: '🔍', dnsx: '🔍', dnsrecon: '🔍',
   nmap: '🔭', naabu: '🔭', masscan: '🔭',
   nuclei: '⚡', nikto: '⚡', sqlmap: '⚡', wpscan: '⚡',
   ffuf: '📂', gobuster: '📂', katana: '🕷', gospider: '🕷',

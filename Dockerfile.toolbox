@@ -44,7 +44,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     arjun \
     theharvester \
     recon-ng \
-    amass \
     responder \
     crackmapexec \
     impacket-scripts \
