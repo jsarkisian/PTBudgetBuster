@@ -101,7 +101,10 @@ RUN pip3 install fastapi uvicorn pyyaml --break-system-packages
 RUN pip3 install droopescan dirsearch corstest --break-system-packages || true
 
 # Copy the tool execution server
-COPY configs/tool_definitions.yaml /opt/pentest/configs/
+# tool_definitions.yaml goes to /opt/pentest/defaults/ first, then is copied
+# to /opt/pentest/configs/ at startup (the configs dir is a named volume that
+# would shadow files baked into the image).
+COPY configs/tool_definitions.yaml /opt/pentest/defaults/
 COPY scripts/tool_server.py /opt/pentest/scripts/
 
 # DNS fix script
@@ -112,4 +115,4 @@ WORKDIR /opt/pentest
 
 EXPOSE 9500
 
-CMD ["/bin/bash", "-c", "/opt/pentest/scripts/dns_fix.sh & python3 /opt/pentest/scripts/tool_server.py"]
+CMD ["/bin/bash", "-c", "cp /opt/pentest/defaults/tool_definitions.yaml /opt/pentest/configs/tool_definitions.yaml && /opt/pentest/scripts/dns_fix.sh & python3 /opt/pentest/scripts/tool_server.py"]
