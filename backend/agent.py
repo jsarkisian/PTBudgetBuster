@@ -886,9 +886,14 @@ class PentestAgent:
             messages.append({"role": "assistant", "content": assistant_content})
             messages.append({"role": "user", "content": tool_results})
     
-    async def autonomous_loop(self):
-        """Run autonomous testing loop with propose-then-execute approval gates."""
-        session = self.session
+    async def _run_single_step(
+        self,
+        session,
+        system: str,
+        conversation: list[dict],
+        step_label: str | None = None,
+    ) -> bool:
+        """Run one propose->approve->execute cycle. Returns True if step completed."""
 
         def _ts():
             return datetime.now(timezone.utc).isoformat()
@@ -896,72 +901,76 @@ class PentestAgent:
         async def _status(msg):
             await self.broadcast({"type": "auto_status", "message": msg, "timestamp": _ts()})
 
-        await _status(f"Starting autonomous testing: {session.auto_objective}")
+        session.auto_current_step += 1
+        step = session.auto_current_step
+        label = step_label or f"Step {step}/{session.auto_max_steps}"
 
-        system = SYSTEM_PROMPT + "\n\n## Current Engagement Context\n" + session.get_context_summary()
+        # PHASE 1: PROPOSE — no tools
+        await _status(f"{label}: AI is planning…")
 
-        # Persistent conversation across steps so the AI retains full context
-        conversation: list[dict] = []
+        if not session.auto_mode:
+            return False
 
-        first_prompt = f"""You are now in AUTONOMOUS MODE for this penetration testing engagement.
+        proposal_response = await self.client.messages.create(
+            model=self.model,
+            max_tokens=1024,
+            system=system,
+            messages=conversation,
+        )
 
-OBJECTIVE: {session.auto_objective}
-MAX STEPS: {session.auto_max_steps}
+        if not session.auto_mode:
+            return False
 
-IMPORTANT — How autonomous mode works:
-- Each step has TWO phases: PROPOSE then EXECUTE.
-- Right now you are in the PROPOSE phase. You do NOT have access to tools.
-- Describe what you want to do in this step: which tool(s) you will run, with what arguments, and why.
-- Be specific — state the exact command(s) you plan to run (e.g. "Run subfinder -d example.com -silent").
-- Do NOT describe more than one logical action per step. One tool or one short pipeline per step.
-- The human operator will review your proposal and approve or reject it.
-- If approved, you will then be asked to execute EXACTLY what you proposed — nothing more, nothing less.
+        proposal_text = "\n".join(
+            b.text for b in proposal_response.content if b.type == "text"
+        ).strip() or "(no proposal provided)"
 
-Propose your first step now. What is the first thing you want to do and why?"""
-
-        conversation.append({"role": "user", "content": first_prompt})
-
-        while session.auto_mode and session.auto_current_step < session.auto_max_steps:
-            session.auto_current_step += 1
-            step = session.auto_current_step
-
-            # ══════════════════════════════════════════════════════════════════
-            # PHASE 1: PROPOSE — Claude describes what it wants to do (no tools)
-            # ══════════════════════════════════════════════════════════════════
-            await _status(f"Step {step}/{session.auto_max_steps}: AI is planning…")
-
-            if not session.auto_mode:
-                return
-
-            proposal_response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=1024,
-                system=system,
-                messages=conversation,
-                # NO tools — Claude can only describe its plan
-            )
-
-            if not session.auto_mode:
-                return
-
-            proposal_text = "\n".join(
-                b.text for b in proposal_response.content if b.type == "text"
-            ).strip() or "(no proposal provided)"
-
+        # Check if AI says phase is complete
+        if "PHASE COMPLETE" in proposal_text.upper():
             conversation.append({"role": "assistant", "content": proposal_text})
+            await _status(f"{label}: AI indicated phase complete")
+            return False
 
-            snippet = proposal_text[:300]
-            await _status(f"Step {step}: {snippet}{'…' if len(proposal_text) > 300 else ''}")
+        conversation.append({"role": "assistant", "content": proposal_text})
 
-            # ══════════════════════════════════════════════════════════════════
-            # APPROVAL GATE — user reviews the PROPOSAL before anything runs
-            # ══════════════════════════════════════════════════════════════════
-            step_id = str(uuid.uuid4())[:8]
+        snippet = proposal_text[:300]
+        await _status(f"{label}: {snippet}{'…' if len(proposal_text) > 300 else ''}")
+
+        # APPROVAL GATE
+        step_id = str(uuid.uuid4())[:8]
+
+        if session.auto_approval_mode == "auto":
+            # Auto-approve: skip the gate
             session.auto_pending_approval = {
                 "step_id": step_id,
                 "step_number": step,
                 "description": proposal_text,
-                "tool_calls": [],  # Nothing executed yet
+                "tool_calls": [],
+                "approved": True,
+                "resolved": True,
+            }
+            await self.broadcast({
+                "type": "auto_step_pending",
+                "step_id": step_id,
+                "step_number": step,
+                "description": proposal_text,
+                "tool_calls": [],
+                "auto_approved": True,
+                "timestamp": _ts(),
+            })
+            await self.broadcast({
+                "type": "auto_step_decision",
+                "step_id": step_id,
+                "approved": True,
+                "timestamp": _ts(),
+            })
+        else:
+            # Manual: wait for user approval
+            session.auto_pending_approval = {
+                "step_id": step_id,
+                "step_number": step,
+                "description": proposal_text,
+                "tool_calls": [],
                 "approved": None,
                 "resolved": False,
             }
@@ -975,13 +984,11 @@ Propose your first step now. What is the first thing you want to do and why?"""
                 "timestamp": _ts(),
             })
 
-            timeout = 600  # 10 min to review
+            timeout = 600
             elapsed = 0
             while not session.auto_pending_approval.get("resolved") and elapsed < timeout:
                 if not session.auto_mode:
-                    return
-
-                # Handle any queued user messages during the wait
+                    return False
                 if session.auto_user_messages:
                     queued = session.auto_user_messages[:]
                     session.auto_user_messages.clear()
@@ -1003,159 +1010,288 @@ Propose your first step now. What is the first thing you want to do and why?"""
                             "message": reply_text,
                             "timestamp": _ts(),
                         })
-
                 await asyncio.sleep(1)
                 elapsed += 1
 
             if elapsed >= timeout:
-                await _status("Approval timeout — stopping autonomous mode")
+                await _status("Approval timeout — stopping")
                 session.auto_mode = False
-                return
+                return False
 
             if not session.auto_pending_approval.get("approved"):
-                await _status(f"Step {step} rejected — stopping autonomous mode")
+                await _status(f"{label} rejected — stopping")
                 session.auto_mode = False
-                return
+                return False
 
-            # ══════════════════════════════════════════════════════════════════
-            # PHASE 2: EXECUTE — Claude runs ONLY what was proposed
-            # ══════════════════════════════════════════════════════════════════
-            await _status(f"Step {step}: Approved — executing…")
+        # PHASE 2: EXECUTE — with tools
+        await _status(f"{label}: Approved — executing…")
 
-            # Drain any messages queued during approval
-            extra_context = ""
-            if session.auto_user_messages:
-                queued = session.auto_user_messages[:]
-                session.auto_user_messages.clear()
-                extra_context = "\n\nThe tester also said: " + " | ".join(queued)
+        extra_context = ""
+        if session.auto_user_messages:
+            queued = session.auto_user_messages[:]
+            session.auto_user_messages.clear()
+            extra_context = "\n\nThe tester also said: " + " | ".join(queued)
 
-            conversation.append({
-                "role": "user",
-                "content": (
-                    f"Step {step} APPROVED. Now execute EXACTLY what you proposed above — nothing more, nothing less. "
-                    f"Do not run any additional tools beyond what you described in your proposal. "
-                    f"After execution, provide a brief summary of the results and what you found."
-                    + extra_context
-                ),
-            })
+        conversation.append({
+            "role": "user",
+            "content": (
+                f"Step APPROVED. Now execute EXACTLY what you proposed above — nothing more, nothing less. "
+                f"Do not run any additional tools beyond what you described in your proposal. "
+                f"After execution, provide a brief summary of the results and what you found."
+                + extra_context
+            ),
+        })
 
-            step_tool_calls: list[dict] = []
-            step_text_parts: list[str] = []
+        step_tool_calls: list[dict] = []
+        step_text_parts: list[str] = []
 
-            # Inner agentic loop — execute with tools
-            while True:
+        while True:
+            if not session.auto_mode:
+                return False
+
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                system=system,
+                tools=self._get_tools_schema(),
+                messages=conversation,
+            )
+
+            if not session.auto_mode:
+                return False
+
+            has_tool_use = any(b.type == "tool_use" for b in response.content)
+
+            for block in response.content:
+                if block.type == "text" and block.text.strip():
+                    step_text_parts.append(block.text)
+
+            if not has_tool_use:
+                break
+
+            assistant_content = []
+            tool_results = []
+
+            for block in response.content:
+                if block.type == "text":
+                    assistant_content.append({"type": "text", "text": block.text})
+                elif block.type == "tool_use":
+                    if not session.auto_mode:
+                        return False
+
+                    assistant_content.append({
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    })
+
+                    if block.name == "execute_tool":
+                        tool_label = block.input.get("tool", "tool")
+                        raw = (block.input.get("parameters") or {}).get("__raw_args__", "")
+                        detail = f" {raw[:60]}" if raw else ""
+                    elif block.name == "execute_bash":
+                        tool_label = "bash"
+                        detail = f": {block.input.get('command', '')[:80]}"
+                    elif block.name == "record_finding":
+                        tool_label = "record_finding"
+                        detail = f": [{block.input.get('severity','?').upper()}] {block.input.get('title','')}"
+                    else:
+                        tool_label = block.name
+                        detail = ""
+
+                    await _status(f"{label}: Running {tool_label}{detail}…")
+
+                    result = await self._execute_tool_call(block.name, block.input)
+
+                    if not session.auto_mode:
+                        return False
+
+                    await _status(f"{label}: {tool_label} finished — analysing…")
+
+                    step_tool_calls.append({
+                        "tool": block.name,
+                        "input": block.input,
+                        "result_preview": result[:500],
+                    })
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+
+            conversation.append({"role": "assistant", "content": assistant_content})
+            conversation.append({"role": "user", "content": tool_results})
+
+        if step_text_parts:
+            final_text = "\n\n".join(step_text_parts)
+            conversation.append({"role": "assistant", "content": final_text})
+
+        summary = "\n\n".join(step_text_parts) if step_text_parts else "(no summary)"
+
+        await self.broadcast({
+            "type": "auto_step_complete",
+            "step_id": step_id,
+            "step_number": step,
+            "summary": summary,
+            "tool_calls": step_tool_calls,
+            "timestamp": _ts(),
+        })
+
+        await _status(f"{label}: Complete")
+        return True
+
+    async def autonomous_loop(self, playbook: dict | None = None):
+        """Run autonomous testing loop with optional playbook phases."""
+        session = self.session
+
+        def _ts():
+            return datetime.now(timezone.utc).isoformat()
+
+        async def _status(msg):
+            await self.broadcast({"type": "auto_status", "message": msg, "timestamp": _ts()})
+
+        await _status(f"Starting autonomous testing: {session.auto_objective}")
+
+        system = SYSTEM_PROMPT + "\n\n## Current Engagement Context\n" + session.get_context_summary()
+
+        conversation: list[dict] = []
+
+        if playbook:
+            phases = playbook["phases"]
+            session.auto_phase_count = len(phases)
+
+            for phase_idx, phase in enumerate(phases):
                 if not session.auto_mode:
                     return
 
-                response = await self.client.messages.create(
-                    model=self.model,
-                    max_tokens=4096,
-                    system=system,
-                    tools=self._get_tools_schema(),
-                    messages=conversation,
+                session.auto_current_phase = phase_idx + 1
+                phase_name = phase["name"]
+                phase_goal = phase["goal"]
+                phase_tools = ", ".join(phase.get("tools_hint", []))
+                phase_max = phase.get("max_steps", 2)
+
+                await self.broadcast({
+                    "type": "auto_phase_changed",
+                    "phase_number": phase_idx + 1,
+                    "phase_count": len(phases),
+                    "phase_name": phase_name,
+                    "phase_goal": phase_goal,
+                    "timestamp": _ts(),
+                })
+
+                await _status(f"Phase {phase_idx + 1}/{len(phases)}: {phase_name}")
+
+                phase_prompt = (
+                    f"You are in PHASE {phase_idx + 1} of {len(phases)}: {phase_name}\n\n"
+                    f"PHASE GOAL: {phase_goal}\n"
+                    f"SUGGESTED TOOLS: {phase_tools or 'any appropriate tools'}\n"
+                    f"MAX STEPS FOR THIS PHASE: {phase_max}\n\n"
+                    f"OVERALL OBJECTIVE: {session.auto_objective}\n\n"
+                    f"You are in the PROPOSE phase. Describe what you want to do for your first step in this phase. "
+                    f"State the exact tool and arguments you plan to run, and why. "
+                    f"One tool or one short pipeline per step."
                 )
 
-                if not session.auto_mode:
-                    return
+                if phase_idx == 0:
+                    phase_prompt = (
+                        f"You are now in AUTONOMOUS MODE for this penetration testing engagement.\n\n"
+                        f"OBJECTIVE: {session.auto_objective}\n\n"
+                        f"You will follow a playbook with {len(phases)} phases. "
+                        f"Each phase has a specific goal. Complete the current phase before moving on.\n\n"
+                        + phase_prompt
+                    )
 
-                has_tool_use = any(b.type == "tool_use" for b in response.content)
+                conversation.append({"role": "user", "content": phase_prompt})
 
-                for block in response.content:
-                    if block.type == "text" and block.text.strip():
-                        step_text_parts.append(block.text)
+                for phase_step in range(phase_max):
+                    if not session.auto_mode:
+                        return
 
-                if not has_tool_use:
-                    break
-
-                assistant_content = []
-                tool_results = []
-
-                for block in response.content:
-                    if block.type == "text":
-                        assistant_content.append({"type": "text", "text": block.text})
-                    elif block.type == "tool_use":
+                    completed = await self._run_single_step(
+                        session, system, conversation,
+                        step_label=f"Phase {phase_idx + 1}/{len(phases)}: {phase_name} — Step {phase_step + 1}/{phase_max}",
+                    )
+                    if not completed or not session.auto_mode:
                         if not session.auto_mode:
                             return
+                        break
 
-                        assistant_content.append({
-                            "type": "tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": block.input,
+                    if phase_step < phase_max - 1 and session.auto_mode:
+                        conversation.append({
+                            "role": "user",
+                            "content": (
+                                f"Step completed. You are still in PHASE {phase_idx + 1}: {phase_name}. "
+                                f"Steps remaining in this phase: {phase_max - phase_step - 1}. "
+                                f"Phase goal: {phase_goal}\n\n"
+                                f"You are in PROPOSE mode. Propose your next step for this phase, "
+                                f"or say 'PHASE COMPLETE' if the goal has been achieved."
+                            ),
                         })
 
-                        if block.name == "execute_tool":
-                            tool_label = block.input.get("tool", "tool")
-                            raw = (block.input.get("parameters") or {}).get("__raw_args__", "")
-                            detail = f" {raw[:60]}" if raw else ""
-                        elif block.name == "execute_bash":
-                            tool_label = "bash"
-                            detail = f": {block.input.get('command', '')[:80]}"
-                        elif block.name == "record_finding":
-                            tool_label = "record_finding"
-                            detail = f": [{block.input.get('severity','?').upper()}] {block.input.get('title','')}"
-                        else:
-                            tool_label = block.name
-                            detail = ""
-
-                        await _status(f"Step {step}: Running {tool_label}{detail}…")
-
-                        result = await self._execute_tool_call(block.name, block.input)
-
-                        if not session.auto_mode:
-                            return
-
-                        await _status(f"Step {step}: {tool_label} finished — analysing…")
-
-                        step_tool_calls.append({
-                            "tool": block.name,
-                            "input": block.input,
-                            "result_preview": result[:500],
+                if session.auto_mode:
+                    await _status(f"Phase {phase_idx + 1}/{len(phases)}: {phase_name} — complete")
+                    if phase_idx < len(phases) - 1:
+                        conversation.append({
+                            "role": "user",
+                            "content": (
+                                f"Phase {phase_idx + 1} ({phase_name}) is now complete. "
+                                f"Moving to the next phase."
+                            ),
                         })
 
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result,
-                        })
-
-                conversation.append({"role": "assistant", "content": assistant_content})
-                conversation.append({"role": "user", "content": tool_results})
-            # ── End execution loop ─────────────────────────────────────────
-
-            # Add Claude's summary to conversation
-            if step_text_parts:
-                final_text = "\n\n".join(step_text_parts)
-                conversation.append({"role": "assistant", "content": final_text})
-
-            summary = "\n\n".join(step_text_parts) if step_text_parts else "(no summary)"
-
-            # Broadcast completion with tool call results
+            await _status(f"Playbook complete — {len(phases)} phases executed")
+            session.auto_mode = False
             await self.broadcast({
-                "type": "auto_step_complete",
-                "step_id": step_id,
-                "step_number": step,
-                "summary": summary,
-                "tool_calls": step_tool_calls,
+                "type": "auto_mode_changed",
+                "enabled": False,
                 "timestamp": _ts(),
             })
 
-            await _status(f"Step {step}: Complete")
+        else:
+            # Freeform mode (existing behavior)
+            first_prompt = f"""You are now in AUTONOMOUS MODE for this penetration testing engagement.
 
-            # Prompt Claude to propose the next step (no tools again)
-            if session.auto_mode and step < session.auto_max_steps:
-                conversation.append({
-                    "role": "user",
-                    "content": (
-                        f"Step {step} execution is complete. "
-                        f"Steps remaining: {session.auto_max_steps - step}. "
-                        f"You are back in PROPOSE mode — you do NOT have tools right now. "
-                        f"Based on what you've found so far, propose the next step. "
-                        f"State the exact tool and arguments you want to run, and why."
-                    ),
-                })
+OBJECTIVE: {session.auto_objective}
+MAX STEPS: {session.auto_max_steps}
 
-        await _status(
-            f"Autonomous testing completed — {session.auto_current_step} step(s) executed"
-        )
-        session.auto_mode = False
+IMPORTANT — How autonomous mode works:
+- Each step has TWO phases: PROPOSE then EXECUTE.
+- Right now you are in the PROPOSE phase. You do NOT have access to tools.
+- Describe what you want to do in this step: which tool(s) you will run, with what arguments, and why.
+- Be specific — state the exact command(s) you plan to run (e.g. "Run subfinder -d example.com -silent").
+- Do NOT describe more than one logical action per step. One tool or one short pipeline per step.
+- The human operator will review your proposal and approve or reject it.
+- If approved, you will then be asked to execute EXACTLY what you proposed — nothing more, nothing less.
+
+Propose your first step now. What is the first thing you want to do and why?"""
+
+            conversation.append({"role": "user", "content": first_prompt})
+
+            while session.auto_mode and session.auto_current_step < session.auto_max_steps:
+                completed = await self._run_single_step(session, system, conversation)
+                if not completed or not session.auto_mode:
+                    return
+
+                if session.auto_mode and session.auto_current_step < session.auto_max_steps:
+                    conversation.append({
+                        "role": "user",
+                        "content": (
+                            f"Step {session.auto_current_step} execution is complete. "
+                            f"Steps remaining: {session.auto_max_steps - session.auto_current_step}. "
+                            f"You are back in PROPOSE mode — you do NOT have tools right now. "
+                            f"Based on what you've found so far, propose the next step. "
+                            f"State the exact tool and arguments you want to run, and why."
+                        ),
+                    })
+
+            await _status(
+                f"Autonomous testing completed — {session.auto_current_step} step(s) executed"
+            )
+            session.auto_mode = False
+            await self.broadcast({
+                "type": "auto_mode_changed",
+                "enabled": False,
+                "timestamp": _ts(),
+            })

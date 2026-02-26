@@ -35,6 +35,10 @@ class Session:
         self.auto_current_step: int = 0
         self.auto_pending_approval: Optional[dict] = None
         self.auto_user_messages: list[str] = []  # messages queued from the chat input
+        self.auto_playbook_id: Optional[str] = None
+        self.auto_current_phase: int = 0
+        self.auto_phase_count: int = 0
+        self.auto_approval_mode: str = "manual"
 
         # Scope addition approvals (not persisted)
         self.pending_scope_approvals: dict[str, dict] = {}
@@ -134,6 +138,10 @@ CURRENT FINDINGS:
             "auto_current_step": self.auto_current_step,
             "auto_max_steps": self.auto_max_steps,
             "auto_pending_approval": self.auto_pending_approval,
+            "auto_playbook_id": self.auto_playbook_id,
+            "auto_current_phase": self.auto_current_phase,
+            "auto_phase_count": self.auto_phase_count,
+            "auto_approval_mode": self.auto_approval_mode,
         }
     
     def to_full_dict(self) -> dict:

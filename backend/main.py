@@ -31,6 +31,7 @@ from session_manager import SessionManager, Session
 from user_manager import UserManager
 from client_manager import ClientManager
 from schedule_manager import ScheduleManager
+from playbook_manager import list_playbooks, get_playbook, create_playbook, update_playbook, delete_playbook
 
 class Settings(BaseSettings):
     anthropic_api_key: str = ""
@@ -199,6 +200,8 @@ class AutoModeRequest(BaseModel):
     enabled: bool
     objective: str = ""
     max_steps: int = 10
+    playbook_id: Optional[str] = None
+    approval_mode: str = "manual"
 
 class ApprovalResponse(BaseModel):
     session_id: str
@@ -614,6 +617,44 @@ async def chat(req: ChatMessage, current_user=Depends(get_optional_user)):
 
 
 # ──────────────────────────────────────────────
+#  Playbook endpoints
+# ──────────────────────────────────────────────
+
+@app.get("/api/playbooks")
+async def get_playbooks():
+    return list_playbooks()
+
+@app.get("/api/playbooks/{playbook_id}")
+async def get_playbook_by_id(playbook_id: str):
+    pb = get_playbook(playbook_id)
+    if not pb:
+        raise HTTPException(404, "Playbook not found")
+    return pb
+
+@app.post("/api/playbooks")
+async def create_new_playbook(req: dict):
+    try:
+        return create_playbook(req)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.put("/api/playbooks/{playbook_id}")
+async def update_existing_playbook(playbook_id: str, req: dict):
+    try:
+        return update_playbook(playbook_id, req)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+@app.delete("/api/playbooks/{playbook_id}")
+async def delete_existing_playbook(playbook_id: str):
+    try:
+        delete_playbook(playbook_id)
+        return {"status": "deleted"}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ──────────────────────────────────────────────
 #  Autonomous Mode endpoints
 # ──────────────────────────────────────────────
 
@@ -623,13 +664,23 @@ async def start_autonomous(req: AutoModeRequest):
     session = session_mgr.get(req.session_id)
     if not session:
         raise HTTPException(404, "Session not found")
-    
+
+    playbook = None
+    if req.playbook_id:
+        playbook = get_playbook(req.playbook_id)
+        if not playbook:
+            raise HTTPException(404, f"Playbook '{req.playbook_id}' not found")
+
     session.auto_mode = req.enabled
     session.auto_objective = req.objective
     session.auto_max_steps = req.max_steps
     session.auto_current_step = 0
     session.auto_pending_approval = None
-    
+    session.auto_playbook_id = req.playbook_id
+    session.auto_current_phase = 0
+    session.auto_phase_count = len(playbook["phases"]) if playbook else 0
+    session.auto_approval_mode = req.approval_mode
+
     if req.enabled:
         agent = PentestAgent(
             api_key=settings.anthropic_api_key,
@@ -637,17 +688,19 @@ async def start_autonomous(req: AutoModeRequest):
             session=session,
             broadcast_fn=lambda evt: broadcast(req.session_id, evt),
         )
-        # Start autonomous loop in background
-        asyncio.create_task(agent.autonomous_loop())
-    
+        asyncio.create_task(agent.autonomous_loop(playbook=playbook))
+
     await broadcast(req.session_id, {
         "type": "auto_mode_changed",
         "enabled": req.enabled,
         "objective": req.objective,
         "max_steps": req.max_steps,
+        "playbook_id": req.playbook_id,
+        "phase_count": len(playbook["phases"]) if playbook else 0,
+        "approval_mode": req.approval_mode,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
-    
+
     return {"status": "started" if req.enabled else "stopped"}
 
 @app.post("/api/autonomous/approve")
