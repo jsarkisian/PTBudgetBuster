@@ -97,7 +97,7 @@ RUN nuclei -update-templates 2>/dev/null || true
 RUN mkdir -p /opt/pentest/data /opt/pentest/configs /opt/pentest/scripts
 
 # Install Python tool server dependencies
-RUN echo "System packages already installed"
+RUN pip3 install fastapi uvicorn pyyaml --break-system-packages
 RUN pip3 install droopescan dirsearch corstest --break-system-packages || true
 
 # Copy the tool execution server
