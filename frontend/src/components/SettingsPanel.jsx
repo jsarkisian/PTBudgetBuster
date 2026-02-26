@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
+import PlaybookManager from './PlaybookManager';
 
 export default function SettingsPanel({ logoUrl, onLogoChange, fontSize, onFontSizeChange }) {
   const [error, setError] = useState('');
@@ -31,6 +32,11 @@ export default function SettingsPanel({ logoUrl, onLogoChange, fontSize, onFontS
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         <BrandingSection logoUrl={logoUrl} onLogoChange={onLogoChange} onFlash={flash} onError={setError} />
         <FontSizeSection fontSize={fontSize} onFontSizeChange={onFontSizeChange} onFlash={flash} onError={setError} />
+
+        {/* Playbooks section */}
+        <div className="mt-6 border-t border-gray-700 pt-6">
+          <PlaybookManager />
+        </div>
       </div>
     </div>
   );
