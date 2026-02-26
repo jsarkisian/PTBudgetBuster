@@ -69,10 +69,12 @@ function formatCommand(tool, parameters = {}) {
 /**
  * Extract a one-line human summary from tool output.
  */
-function summarizeOutput(tool, output, status) {
+function summarizeOutput(tool, output, status, error) {
   if (status === 'killed') return 'stopped';
   if (status === 'timeout') return 'timed out';
-  if (status === 'error' || status === 'failed') return status;
+  // Bash commands with non-zero exit but no error aren't real failures (grep, diff, test, etc.)
+  if (status === 'error') return 'error';
+  if (status === 'failed' && !(tool === 'bash' && !error)) return 'failed';
 
   if (!output || !output.trim()) return 'no output';
   const lines = output.split('\n').filter(l => l.trim());
@@ -446,8 +448,9 @@ function ExecutionCard({ entry, onImageClick }) {
   const { start, result, tool } = entry;
   const pending = !result;
   const taskResult = result?.result || {};
-  const isSuccess = taskResult.status === 'completed';
+  // Bash commands often return non-zero without being real failures (grep no match, etc.)
   const status = taskResult.status;
+  const isSuccess = status === 'completed' || (tool === 'bash' && status === 'failed' && !taskResult.error);
   const output = taskResult.output || '';
   const error = taskResult.error || '';
   const source = start?.source || result?.source || 'manual';
@@ -466,7 +469,7 @@ function ExecutionCard({ entry, onImageClick }) {
   // Args portion only (strip leading tool name to avoid duplication in header)
   const cmdArgs = cmd.startsWith(tool + ' ') ? cmd.slice(tool.length + 1) : (cmd !== tool ? cmd : '');
 
-  const summary = result ? summarizeOutput(tool, output, status) : null;
+  const summary = result ? summarizeOutput(tool, output, status, error) : null;
   const icon = TOOL_ICONS[tool] || '🔧';
   const desc = TOOL_DESCRIPTIONS[tool];
 

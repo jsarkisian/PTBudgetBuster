@@ -47,6 +47,7 @@ export default function App() {
   const chatAbortRef = React.useRef(null);
   const [clients, setClients] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
+  const autoModeRef = useRef(false);
 
   // Apply font size to root element
   useEffect(() => {
@@ -97,6 +98,8 @@ export default function App() {
   const handleWsMessage = useCallback((event) => {
     switch (event.type) {
       case 'tool_start':
+        // During autonomous mode, AI agent tool events show only in AutoPanel
+        if (autoModeRef.current && event.source === 'ai_agent') break;
         setOutputs(prev => [...prev, {
           id: event.task_id, type: 'start', tool: event.tool,
           parameters: event.parameters, source: event.source || 'manual',
@@ -104,12 +107,15 @@ export default function App() {
         }]);
         break;
       case 'tool_result':
+        // Always count results for screenshots/files refresh
+        setToolResultCount(n => n + 1);
+        // During autonomous mode, AI agent tool events show only in AutoPanel
+        if (autoModeRef.current && event.source === 'ai_agent') break;
         setOutputs(prev => [...prev, {
           id: event.task_id, type: 'result', tool: event.tool,
           result: event.result, source: event.source || 'manual',
           timestamp: event.timestamp,
         }]);
-        setToolResultCount(n => n + 1);
         break;
       case 'new_finding':
         setFindings(prev => [...prev, event.finding]);
@@ -146,6 +152,7 @@ export default function App() {
         ));
         break;
       case 'auto_mode_changed':
+        autoModeRef.current = event.enabled;
         if (event.enabled) { setAutoHistory([]); setAutoCurrentStatus(null); }
         else { setAutoCurrentStatus(null); setPendingApproval(null); }
         setActiveSession(prev => prev ? {
@@ -159,11 +166,6 @@ export default function App() {
           auto_current_phase: 0,
           auto_approval_mode: event.approval_mode || 'manual',
         } : prev);
-        setOutputs(prev => [...prev, {
-          id: `auto-${Date.now()}`, type: 'auto_status',
-          message: event.enabled ? `Autonomous mode started: ${event.objective || ''}` : 'Autonomous mode stopped',
-          timestamp: event.timestamp,
-        }]);
         setAutoHistory(prev => [...prev, {
           type: 'status',
           message: event.enabled ? `Started: ${event.objective || ''}` : 'Autonomous mode stopped',
@@ -172,11 +174,6 @@ export default function App() {
         break;
       case 'auto_status':
         setAutoCurrentStatus(event.message);
-        setOutputs(prev => [...prev, {
-          id: `auto-${Date.now()}`, type: 'auto_status',
-          message: event.message,
-          timestamp: event.timestamp,
-        }]);
         setAutoHistory(prev => [...prev, {
           type: 'status', message: event.message, timestamp: event.timestamp,
         }]);
@@ -312,6 +309,9 @@ export default function App() {
         });
         setOutputs(restored);
       }
+
+      // Sync autonomous mode ref
+      autoModeRef.current = !!data.auto_mode;
 
       // Restore autonomous mode state if it's running
       if (data.auto_mode) {
