@@ -244,6 +244,14 @@ export default function EngagementLive({ engagementId, navigate }) {
         case "engagement_complete":
           setCompleted(true);
           break;
+        case "auto_mode_changed":
+          if (event.enabled) {
+            getEngagement(engagementId).then((eng) => {
+              setEngagement(eng);
+              if (eng.current_phase) setCurrentPhase(eng.current_phase);
+            }).catch(() => {});
+          }
+          break;
       }
     });
     wsRef.current = ws;
@@ -274,9 +282,6 @@ export default function EngagementLive({ engagementId, navigate }) {
     setResuming(true);
     try {
       await startEngagement(engagementId);
-      const eng = await getEngagement(engagementId);
-      setEngagement(eng);
-      if (eng.current_phase) setCurrentPhase(eng.current_phase);
     } catch (err) {
       setEvents((prev) => [...prev, {
         type: "auto_status",
