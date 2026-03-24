@@ -1,7 +1,9 @@
 """
-Pentest AI Agent
-Uses Claude API with tool use to assist with penetration testing.
-Supports autonomous mode with approval gates for each action.
+Pentest AI Agent — Bedrock + Phase State Machine edition.
+
+Uses BedrockClient (boto3) instead of the Anthropic SDK.
+Uses Database (SQLite) instead of Session-based JSON storage.
+Uses PhaseStateMachine to drive autonomous testing through structured phases.
 """
 
 import asyncio
@@ -12,13 +14,17 @@ import uuid
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-import anthropic
 import httpx
 
-from session_manager import Session
+from bedrock_client import BedrockClient
+from db import Database
+from phases import PhaseStateMachine
 
 
-# Patterns to redact from tool output before sending to Claude
+# ---------------------------------------------------------------------------
+# Redaction patterns — strip secrets from tool output before sending to LLM
+# ---------------------------------------------------------------------------
+
 _REDACT_PATTERNS = [
     # Private keys
     (re.compile(r'-----BEGIN [A-Z ]+ PRIVATE KEY-----.*?-----END [A-Z ]+ PRIVATE KEY-----', re.DOTALL), '[REDACTED-PRIVATE-KEY]'),
@@ -51,6 +57,10 @@ def _redact_output(text: str) -> str:
         text = pattern.sub(replacement, text)
     return text
 
+
+# ---------------------------------------------------------------------------
+# Scope helpers
+# ---------------------------------------------------------------------------
 
 def _is_in_scope(target: str, scope: list[str]) -> bool:
     """Return True if target matches any entry in scope list."""
@@ -118,6 +128,10 @@ def _extract_target(tool_name: str, tool_input: dict) -> Optional[str]:
             return domains[0]
     return None
 
+
+# ---------------------------------------------------------------------------
+# System prompt — full tool reference (preserved from original)
+# ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """You are an expert penetration tester assistant operating within a sanctioned, ethical security assessment engagement. You have access to a suite of security testing tools.
 
@@ -429,7 +443,7 @@ snmpwalk -v1 -c public target.com
 ```
 uncover -q "org:example.com" -e shodan
 uncover -q "ssl:example.com" -e shodan,censys,fofa
-uncover -q "http.title:\"example\"" -e shodan -silent
+uncover -q "http.title:\\"example\\"" -e shodan -silent
 ```
 
 **responder** — LLMNR/NBT-NS poisoning (binary: `/usr/sbin/responder`)
@@ -479,20 +493,136 @@ When reporting findings, use this structure:
 """
 
 
+# ---------------------------------------------------------------------------
+# PentestAgent
+# ---------------------------------------------------------------------------
+
 class PentestAgent:
+    """Autonomous pentest agent backed by Bedrock + SQLite + PhaseStateMachine."""
+
     def __init__(
         self,
-        api_key: str,
+        db: Database,
+        engagement_id: str,
         toolbox_url: str,
-        session: Session,
         broadcast_fn: Callable,
+        region: str = "us-east-1",
+        model_id: str = "anthropic.claude-opus-4-20250514",
     ):
-        self.client = anthropic.AsyncAnthropic(api_key=api_key)
+        self.db = db
+        self.engagement_id = engagement_id
         self.toolbox_url = toolbox_url
-        self.session = session
         self.broadcast = broadcast_fn
-        self.model = "claude-sonnet-4-6"
-    
+        self.bedrock = BedrockClient(region=region, model_id=model_id)
+
+        # In-memory credential tokenization store
+        self._token_store: dict[str, str] = {}
+        self._token_counter: int = 0
+
+        # Running flag — set to False to halt autonomous loop
+        self._running: bool = False
+
+        # In-memory scope approval queue (approval_id -> dict)
+        self.pending_scope_approvals: dict[str, dict] = {}
+
+    # ------------------------------------------------------------------
+    # Credential tokenization / detokenization
+    # ------------------------------------------------------------------
+
+    def _next_token(self) -> str:
+        self._token_counter += 1
+        return f"[[_CRED_{self._token_counter}_]]"
+
+    def tokenize_input(self, text: str) -> str:
+        """Replace credential values in user input with opaque tokens."""
+
+        # Explicit user marking: [[sensitive_value]] -> token
+        def replace_explicit(m: re.Match) -> str:
+            value = m.group(1)
+            token = self._next_token()
+            self._token_store[token] = value
+            return token
+
+        text = re.sub(r'\[\[(?!_CRED_\d+_\]\])([^\[\]]+)\]\]', replace_explicit, text)
+
+        # key=value or key: value credential patterns
+        def replace_kv(m: re.Match) -> str:
+            key, value = m.group(1), m.group(2)
+            token = self._next_token()
+            self._token_store[token] = value
+            return f"{key}={token}"
+
+        text = re.sub(
+            r'(password|passwd|pwd|secret|token|api[_-]?key|auth[_-]?key)\s*[=:]\s*(\S+)',
+            replace_kv, text, flags=re.IGNORECASE,
+        )
+
+        # URL embedded credentials: scheme://user:password@host
+        def replace_url_cred(m: re.Match) -> str:
+            scheme, user, password, host = m.group(1), m.group(2), m.group(3), m.group(4)
+            token = self._next_token()
+            self._token_store[token] = password
+            return f"{scheme}{user}:{token}@{host}"
+
+        text = re.sub(
+            r'(https?://)([^:@/\s]+):([^@/\s]+)@([^\s/]+)',
+            replace_url_cred, text,
+        )
+
+        # Authorization headers in input
+        def replace_auth_header(m: re.Match) -> str:
+            prefix, value = m.group(1), m.group(2)
+            token = self._next_token()
+            self._token_store[token] = value
+            return f"{prefix}{token}"
+
+        text = re.sub(
+            r'(Authorization:\s*(?:Bearer|Token|Basic|Digest|ApiKey)\s+)(\S+)',
+            replace_auth_header, text, flags=re.IGNORECASE,
+        )
+
+        # Known API key formats
+        _KEY_PATTERNS = [
+            r'\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b',  # JWT
+            r'\bAKIA[0-9A-Z]{16}\b',                                          # AWS
+            r'\bgh[psopu]_[A-Za-z0-9]{36,}\b',                               # GitHub
+            r'\bglpat-[A-Za-z0-9_\-]{20,}\b',                               # GitLab
+            r'\bxox[bpares]-[A-Za-z0-9\-]{10,}\b',                          # Slack
+            r'\bsk-[A-Za-z0-9\-_]{20,}\b',                                   # OpenAI/Anthropic
+            r'\bnpm_[A-Za-z0-9]{36,}\b',                                      # npm
+        ]
+
+        def replace_known_key(m: re.Match) -> str:
+            value = m.group(0)
+            token = self._next_token()
+            self._token_store[token] = value
+            return token
+
+        for pattern in _KEY_PATTERNS:
+            text = re.sub(pattern, replace_known_key, text)
+
+        return text
+
+    def detokenize(self, text: str) -> str:
+        """Substitute tokens back to real values."""
+        for token, value in self._token_store.items():
+            text = text.replace(token, value)
+        return text
+
+    def detokenize_obj(self, obj):
+        """Recursively detokenize strings inside a dict, list, or str."""
+        if isinstance(obj, str):
+            return self.detokenize(obj)
+        if isinstance(obj, dict):
+            return {k: self.detokenize_obj(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self.detokenize_obj(i) for i in obj]
+        return obj
+
+    # ------------------------------------------------------------------
+    # Tools schema
+    # ------------------------------------------------------------------
+
     def _get_tools_schema(self) -> list[dict]:
         """Define tools available to the AI agent."""
         return [
@@ -603,14 +733,28 @@ class PentestAgent:
                 },
             },
         ]
-    
-    async def _execute_tool_call(self, tool_name: str, tool_input: dict) -> str:
-        """Execute a tool call and return the result."""
+
+    # ------------------------------------------------------------------
+    # Tool execution
+    # ------------------------------------------------------------------
+
+    async def _execute_tool_call(
+        self, tool_name: str, tool_input: dict, target_scope: list[str],
+        phase: str = "",
+    ) -> str:
+        """Execute a tool call and return the result.
+
+        Args:
+            tool_name: Name of the tool to execute.
+            tool_input: Tool parameters from the LLM.
+            target_scope: Current engagement scope list.
+            phase: Current phase name (for DB persistence).
+        """
 
         # --- Scope enforcement (check before detokenizing so target is readable) ---
         target = _extract_target(tool_name, tool_input)
-        if target and not _is_in_scope(target, self.session.target_scope):
-            scope_str = ", ".join(self.session.target_scope) if self.session.target_scope else "none defined"
+        if target and not _is_in_scope(target, target_scope):
+            scope_str = ", ".join(target_scope) if target_scope else "none defined"
             return (
                 f"[SCOPE VIOLATION] Target '{target}' is outside the defined engagement scope.\n"
                 f"Allowed scope: {scope_str}\n"
@@ -618,12 +762,12 @@ class PentestAgent:
             )
 
         # --- De-tokenize: restore real credential values before execution ---
-        tool_input = self.session.detokenize_obj(tool_input)
+        tool_input = self.detokenize_obj(tool_input)
 
         if tool_name == "execute_tool":
             async with httpx.AsyncClient(base_url=self.toolbox_url, timeout=600.0) as client:
                 task_id = str(uuid.uuid4())[:8]
-                
+
                 await self.broadcast({
                     "type": "tool_start",
                     "tool": tool_input["tool"],
@@ -631,13 +775,6 @@ class PentestAgent:
                     "parameters": tool_input["parameters"],
                     "source": "ai_agent",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
-                
-                self.session.add_event("tool_exec", {
-                    "task_id": task_id,
-                    "tool": tool_input["tool"],
-                    "parameters": tool_input["parameters"],
-                    "source": "ai_agent",
                 })
 
                 resp = await client.post("/execute/sync", json={
@@ -647,15 +784,16 @@ class PentestAgent:
                     "timeout": 300,
                 })
                 result = resp.json()
-                
-                self.session.add_event("tool_result", {
-                    "task_id": task_id,
+
+                # Persist tool result to DB
+                await self.db.save_tool_result(self.engagement_id, {
+                    "phase": phase,
                     "tool": tool_input["tool"],
-                    "status": result.get("status"),
-                    "output": result.get("output", "")[:5000],
-                    "source": "ai_agent",
+                    "input": tool_input["parameters"],
+                    "output": result.get("output", "")[:10000],
+                    "status": result.get("status", "unknown"),
                 })
-                
+
                 await self.broadcast({
                     "type": "tool_result",
                     "task_id": task_id,
@@ -667,7 +805,7 @@ class PentestAgent:
                     "source": "ai_agent",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-                
+
                 output = result.get("output", "")
                 error = result.get("error", "")
                 status = result.get("status", "unknown")
@@ -677,7 +815,7 @@ class PentestAgent:
         elif tool_name == "execute_bash":
             async with httpx.AsyncClient(base_url=self.toolbox_url, timeout=600.0) as client:
                 task_id = str(uuid.uuid4())[:8]
-                
+
                 await self.broadcast({
                     "type": "tool_start",
                     "tool": "bash",
@@ -685,13 +823,6 @@ class PentestAgent:
                     "parameters": {"command": tool_input["command"]},
                     "source": "ai_agent",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
-                
-                self.session.add_event("bash_exec", {
-                    "task_id": task_id,
-                    "tool": "bash",
-                    "command": tool_input["command"],
-                    "source": "ai_agent",
                 })
 
                 resp = await client.post("/execute/sync", json={
@@ -701,14 +832,16 @@ class PentestAgent:
                     "timeout": 300,
                 })
                 result = resp.json()
-                
-                self.session.add_event("bash_result", {
-                    "task_id": task_id,
-                    "status": result.get("status"),
-                    "output": result.get("output", "")[:5000],
-                    "source": "ai_agent",
+
+                # Persist tool result to DB
+                await self.db.save_tool_result(self.engagement_id, {
+                    "phase": phase,
+                    "tool": "bash",
+                    "input": {"command": tool_input["command"]},
+                    "output": result.get("output", "")[:10000],
+                    "status": result.get("status", "unknown"),
                 })
-                
+
                 await self.broadcast({
                     "type": "tool_result",
                     "task_id": task_id,
@@ -717,27 +850,28 @@ class PentestAgent:
                     "source": "ai_agent",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-                
+
                 output = result.get("output", "")
                 error = result.get("error", "")
                 return f"Output:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
-        
+
         elif tool_name == "record_finding":
-            finding = self.session.add_finding(
-                severity=tool_input["severity"],
-                title=tool_input["title"],
-                description=tool_input["description"],
-                evidence=tool_input.get("evidence", ""),
-            )
-            
+            finding = await self.db.save_finding(self.engagement_id, {
+                "severity": tool_input["severity"],
+                "title": tool_input["title"],
+                "description": tool_input.get("description", ""),
+                "evidence": tool_input.get("evidence", ""),
+                "phase": phase,
+            })
+
             await self.broadcast({
                 "type": "new_finding",
                 "finding": finding,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            
+
             return f"Finding recorded: [{finding['severity'].upper()}] {finding['title']}"
-        
+
         elif tool_name == "read_file":
             async with httpx.AsyncClient(base_url=self.toolbox_url, timeout=30.0) as client:
                 resp = await client.get(f"/files/{tool_input['path']}")
@@ -749,15 +883,19 @@ class PentestAgent:
             hosts = tool_input.get("hosts", [])
             reason = tool_input.get("reason", "tool discovery")
 
-            # Filter out hosts already in scope — only ask about genuinely new ones
-            existing = {h.strip().lower() for h in self.session.target_scope}
+            # Get current scope from DB
+            engagement = await self.db.get_engagement(self.engagement_id)
+            current_scope = engagement["target_scope"] if engagement else []
+
+            # Filter out hosts already in scope
+            existing = {h.strip().lower() for h in current_scope}
             new_hosts = [h.strip() for h in hosts if h.strip() and h.strip().lower() not in existing]
             if not new_hosts:
                 return f"No new hosts to add — all {len(hosts)} provided host(s) were already in scope."
 
             # Create a pending approval and wait for the tester to decide
             approval_id = str(uuid.uuid4())[:8]
-            self.session.pending_scope_approvals[approval_id] = {
+            self.pending_scope_approvals[approval_id] = {
                 "approval_id": approval_id,
                 "hosts": new_hosts,
                 "reason": reason,
@@ -775,11 +913,11 @@ class PentestAgent:
 
             # Poll until resolved or timeout (90 s)
             timeout, elapsed = 90, 0
-            while not self.session.pending_scope_approvals[approval_id]["resolved"] and elapsed < timeout:
+            while not self.pending_scope_approvals[approval_id]["resolved"] and elapsed < timeout:
                 await asyncio.sleep(1)
                 elapsed += 1
 
-            decision = self.session.pending_scope_approvals.pop(approval_id, {})
+            decision = self.pending_scope_approvals.pop(approval_id, {})
 
             if elapsed >= timeout:
                 return f"Scope addition timed out waiting for tester approval — skipping {len(new_hosts)} host(s)."
@@ -787,573 +925,660 @@ class PentestAgent:
             if not decision.get("approved"):
                 return f"Tester rejected scope addition of {len(new_hosts)} host(s): {', '.join(new_hosts)}."
 
-            added = self.session.add_to_scope(new_hosts)
-            if added:
-                await self.broadcast({
-                    "type": "scope_updated",
-                    "added": added,
-                    "target_scope": self.session.target_scope,
-                    "reason": reason,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
-                return f"Tester approved: added {len(added)} host(s) to scope ({reason}): {', '.join(added)}"
-            return "All proposed hosts were already in scope."
+            # Update scope in DB
+            updated_scope = current_scope + new_hosts
+            await self.db.update_engagement(self.engagement_id, target_scope=updated_scope)
+
+            await self.broadcast({
+                "type": "scope_updated",
+                "added": new_hosts,
+                "target_scope": updated_scope,
+                "reason": reason,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            return f"Tester approved: added {len(new_hosts)} host(s) to scope ({reason}): {', '.join(new_hosts)}"
 
         return "Unknown tool"
-    
+
+    # ------------------------------------------------------------------
+    # Chat — interactive (non-autonomous) mode
+    # ------------------------------------------------------------------
+
     async def chat(self, user_message: str) -> dict:
-        """Process a chat message with streaming and tool use support."""
+        """Process a chat message with tool use support.
 
-        # Build messages with history
-        messages = []
-        for msg in self.session.get_chat_history():
-            messages.append({"role": msg["role"], "content": msg["content"]})
+        Loads history from DB, invokes Bedrock, processes tool_use blocks,
+        persists messages and tool results.
+        """
+        engagement = await self.db.get_engagement(self.engagement_id)
+        if not engagement:
+            return {"content": "Engagement not found.", "tool_calls": []}
 
-        # Add current message if not already in history
+        target_scope = engagement["target_scope"]
+
+        # Build messages from DB history
+        history = await self.db.get_messages(self.engagement_id, limit=50)
+        messages = [{"role": m["role"], "content": m["content"]} for m in history]
+
+        # Add current message
         if not messages or messages[-1].get("content") != user_message:
             messages.append({"role": "user", "content": user_message})
 
-        # Build system prompt with context
-        system = SYSTEM_PROMPT + "\n\n## Current Engagement Context\n" + self.session.get_context_summary()
+        # Persist user message
+        await self.db.save_message(self.engagement_id, "user", user_message)
 
+        # Build system prompt with context
+        scope_str = ", ".join(target_scope) if target_scope else "none defined"
+        context = (
+            f"\n\n## Current Engagement Context\n"
+            f"Engagement: {engagement['name']}\n"
+            f"Target Scope: {scope_str}\n"
+            f"Status: {engagement['status']}\n"
+        )
+        system = SYSTEM_PROMPT + context
+
+        tools = self._get_tools_schema()
         tool_calls = []
 
-        # Agentic loop - keep processing until no more tool calls
+        # Agentic loop — keep processing until no more tool calls
         while True:
-            # Use streaming API to send deltas via WebSocket
-            collected_text = ""
-            collected_blocks = []  # full content blocks for tool processing
+            # Call Bedrock (synchronous → wrap in thread)
+            response = await asyncio.to_thread(
+                self.bedrock.invoke, messages, system, tools, 4096,
+            )
 
-            async with self.client.messages.stream(
-                model=self.model,
-                max_tokens=4096,
-                system=system,
-                tools=self._get_tools_schema(),
-                messages=messages,
-            ) as stream:
-                async for event in stream:
-                    if event.type == "content_block_start":
-                        if event.content_block.type == "text":
-                            collected_blocks.append({"type": "text", "text": ""})
-                        elif event.content_block.type == "tool_use":
-                            collected_blocks.append({
-                                "type": "tool_use",
-                                "id": event.content_block.id,
-                                "name": event.content_block.name,
-                                "input": {},
-                            })
-                    elif event.type == "content_block_delta":
-                        if event.delta.type == "text_delta":
-                            collected_text += event.delta.text
-                            # Broadcast text delta to frontend
-                            await self.broadcast({
-                                "type": "chat_stream",
-                                "content": event.delta.text,
-                            })
-                        elif event.delta.type == "input_json_delta":
-                            pass  # JSON accumulation handled by final message
+            content_blocks = response.get("content", [])
+            stop_reason = response.get("stop_reason")
 
-                # Get the final complete message
-                response = await stream.get_final_message()
-
-            # Signal end of this streaming turn
-            await self.broadcast({"type": "chat_stream_end"})
-
-            # Check if there are tool use blocks
-            has_tool_use = any(block.type == "tool_use" for block in response.content)
+            # Check if there are tool_use blocks
+            has_tool_use = any(
+                b.get("type") == "tool_use" for b in content_blocks
+            )
 
             if not has_tool_use:
-                # No more tool calls, extract final text
-                text_parts = [block.text for block in response.content if block.type == "text"]
-                return {
-                    "content": "\n".join(text_parts),
-                    "tool_calls": tool_calls,
-                }
+                # Extract final text
+                text_parts = [
+                    b["text"] for b in content_blocks if b.get("type") == "text"
+                ]
+                final_text = "\n".join(text_parts)
+
+                # Persist assistant response
+                await self.db.save_message(self.engagement_id, "assistant", final_text)
+
+                # Broadcast end of stream
+                await self.broadcast({"type": "chat_stream_end"})
+
+                return {"content": final_text, "tool_calls": tool_calls}
 
             # Process tool calls
             assistant_content = []
             tool_results = []
 
-            for block in response.content:
-                if block.type == "text":
-                    assistant_content.append({"type": "text", "text": block.text})
-                elif block.type == "tool_use":
+            for block in content_blocks:
+                if block.get("type") == "text":
+                    assistant_content.append({"type": "text", "text": block["text"]})
+                    # Broadcast text
+                    await self.broadcast({
+                        "type": "chat_stream",
+                        "content": block["text"],
+                    })
+                elif block.get("type") == "tool_use":
                     assistant_content.append({
                         "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
+                        "id": block["id"],
+                        "name": block["name"],
+                        "input": block["input"],
                     })
 
                     # Execute the tool
-                    result = await self._execute_tool_call(block.name, block.input)
+                    result = await self._execute_tool_call(
+                        block["name"], block["input"], target_scope,
+                    )
 
                     tool_calls.append({
-                        "tool": block.name,
-                        "input": block.input,
+                        "tool": block["name"],
+                        "input": block["input"],
                         "result_preview": result[:500],
                     })
 
                     tool_results.append({
                         "type": "tool_result",
-                        "tool_use_id": block.id,
+                        "tool_use_id": block["id"],
                         "content": result,
                     })
 
             # Add assistant response and tool results to messages
             messages.append({"role": "assistant", "content": assistant_content})
             messages.append({"role": "user", "content": tool_results})
-    
-    async def _run_single_step(
-        self,
-        session,
-        system: str,
-        conversation: list[dict],
-        step_label: str | None = None,
-    ) -> bool:
-        """Run one propose->approve->execute cycle. Returns True if step completed."""
 
-        def _ts():
-            return datetime.now(timezone.utc).isoformat()
+    # ------------------------------------------------------------------
+    # Stop
+    # ------------------------------------------------------------------
 
-        async def _status(msg):
-            await self.broadcast({"type": "auto_status", "message": msg, "timestamp": _ts()})
+    def stop(self):
+        """Halt the autonomous loop."""
+        self._running = False
 
-        session.auto_current_step += 1
-        step = session.auto_current_step
-        label = step_label or f"Step {step}/{session.auto_max_steps}"
+    # ------------------------------------------------------------------
+    # Autonomous run — phase-based
+    # ------------------------------------------------------------------
 
-        # PHASE 1: PROPOSE — no tools
-        await _status(f"{label}: AI is planning…")
+    async def run_autonomous(self):
+        """Run autonomous testing through the phase state machine.
 
-        if not session.auto_mode:
-            return False
+        Progresses RECON -> ENUMERATION -> VULN_SCAN -> ANALYSIS automatically.
+        At EXPLOITATION: pauses, broadcasts findings, returns (waits for approval).
+        """
+        self._running = True
 
-        try:
-            proposal_response = await self.client.messages.create(
-                model=self.model,
-                max_tokens=1024,
-                system=system,
-                messages=conversation,
-            )
-        except Exception as e:
-            await _status(f"Error calling AI API: {e}")
-            raise
+        engagement = await self.db.get_engagement(self.engagement_id)
+        if not engagement:
+            await self.broadcast({
+                "type": "auto_status",
+                "message": "Engagement not found.",
+                "timestamp": self._ts(),
+            })
+            return
 
-        if not session.auto_mode:
-            return False
+        target_scope = engagement["target_scope"]
 
-        proposal_text = "\n".join(
-            b.text for b in proposal_response.content if b.type == "text"
-        ).strip() or "(no proposal provided)"
+        # Check for a saved phase state to resume from
+        start_phase = engagement.get("current_phase") or None
 
-        # Check if AI says phase is complete
-        if "PHASE COMPLETE" in proposal_text.upper():
-            conversation.append({"role": "assistant", "content": proposal_text})
-            await _status(f"{label}: AI indicated phase complete")
-            return False
+        phase_sm = PhaseStateMachine(start_phase=start_phase)
 
-        conversation.append({"role": "assistant", "content": proposal_text})
+        await self.db.update_engagement(
+            self.engagement_id,
+            status="running",
+            current_phase=phase_sm.current_phase.name,
+        )
 
-        snippet = proposal_text[:300]
-        await _status(f"{label}: {snippet}{'…' if len(proposal_text) > 300 else ''}")
-
-        # APPROVAL GATE
-        step_id = str(uuid.uuid4())[:8]
-
-        if session.auto_approval_mode == "auto":
-            # Auto-approve: skip the gate
-            session.auto_pending_approval = {
-                "step_id": step_id,
-                "step_number": step,
-                "description": proposal_text,
-                "tool_calls": [],
-                "approved": True,
-                "resolved": True,
-            }
-            step_pending_event = {
-                "type": "auto_step_pending",
-                "step_id": step_id,
-                "step_number": step,
-                "description": proposal_text,
-                "tool_calls": [],
-                "auto_approved": True,
-                "timestamp": _ts(),
-            }
-            session.add_event("auto_step_pending", step_pending_event)
-            await self.broadcast(step_pending_event)
-            step_decision_event = {
-                "type": "auto_step_decision",
-                "step_id": step_id,
-                "approved": True,
-                "timestamp": _ts(),
-            }
-            session.add_event("auto_step_decision", step_decision_event)
-            await self.broadcast(step_decision_event)
-        else:
-            # Manual: wait for user approval
-            session.auto_pending_approval = {
-                "step_id": step_id,
-                "step_number": step,
-                "description": proposal_text,
-                "tool_calls": [],
-                "approved": None,
-                "resolved": False,
-            }
-
-            step_pending_event = {
-                "type": "auto_step_pending",
-                "step_id": step_id,
-                "step_number": step,
-                "description": proposal_text,
-                "tool_calls": [],
-                "timestamp": _ts(),
-            }
-            session.add_event("auto_step_pending", step_pending_event)
-            await self.broadcast(step_pending_event)
-
-            timeout = 600
-            elapsed = 0
-            while not session.auto_pending_approval.get("resolved") and elapsed < timeout:
-                if not session.auto_mode:
-                    return False
-                if session.auto_user_messages:
-                    queued = session.auto_user_messages[:]
-                    session.auto_user_messages.clear()
-                    for user_msg in queued:
-                        conversation.append({"role": "user", "content": user_msg})
-                        await _status("Responding to your message…")
-                        try:
-                            reply_resp = await self.client.messages.create(
-                                model=self.model,
-                                max_tokens=1024,
-                                system=system,
-                                messages=conversation,
-                            )
-                        except Exception as e:
-                            await _status(f"Error calling AI API: {e}")
-                            raise
-                        reply_text = "\n".join(
-                            b.text for b in reply_resp.content if b.type == "text"
-                        ).strip()
-                        conversation.append({"role": "assistant", "content": reply_text})
-                        await self.broadcast({
-                            "type": "auto_ai_reply",
-                            "message": reply_text,
-                            "timestamp": _ts(),
-                        })
-                await asyncio.sleep(1)
-                elapsed += 1
-
-            if elapsed >= timeout:
-                await _status("Approval timeout — stopping")
-                session.auto_mode = False
-                return False
-
-            if not session.auto_pending_approval.get("approved"):
-                await _status(f"{label} rejected — stopping")
-                session.auto_mode = False
-                return False
-
-        # PHASE 2: EXECUTE — with tools
-        await _status(f"{label}: Approved — executing…")
-
-        extra_context = ""
-        if session.auto_user_messages:
-            queued = session.auto_user_messages[:]
-            session.auto_user_messages.clear()
-            extra_context = "\n\nThe tester also said: " + " | ".join(queued)
-
-        conversation.append({
-            "role": "user",
-            "content": (
-                f"Step APPROVED. Now execute EXACTLY what you proposed above — nothing more, nothing less. "
-                f"Do not run any additional tools beyond what you described in your proposal. "
-                f"After execution, provide a brief summary of the results and what you found."
-                + extra_context
-            ),
+        await self.broadcast({
+            "type": "auto_mode_changed",
+            "enabled": True,
+            "timestamp": self._ts(),
         })
 
-        step_tool_calls: list[dict] = []
-        step_text_parts: list[str] = []
-
-        while True:
-            if not session.auto_mode:
-                return False
-
-            try:
-                response = await self.client.messages.create(
-                    model=self.model,
-                    max_tokens=4096,
-                    system=system,
-                    tools=self._get_tools_schema(),
-                    messages=conversation,
-                )
-            except Exception as e:
-                await _status(f"Error calling AI API: {e}")
-                raise
-
-            if not session.auto_mode:
-                return False
-
-            has_tool_use = any(b.type == "tool_use" for b in response.content)
-
-            for block in response.content:
-                if block.type == "text" and block.text.strip():
-                    step_text_parts.append(block.text)
-
-            if not has_tool_use:
-                break
-
-            assistant_content = []
-            tool_results = []
-
-            for block in response.content:
-                if block.type == "text":
-                    assistant_content.append({"type": "text", "text": block.text})
-                elif block.type == "tool_use":
-                    if not session.auto_mode:
-                        return False
-
-                    assistant_content.append({
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input,
-                    })
-
-                    if block.name == "execute_tool":
-                        tool_label = block.input.get("tool", "tool")
-                        raw = (block.input.get("parameters") or {}).get("__raw_args__", "")
-                        detail = f" {raw[:60]}" if raw else ""
-                    elif block.name == "execute_bash":
-                        tool_label = "bash"
-                        detail = f": {block.input.get('command', '')[:80]}"
-                    elif block.name == "record_finding":
-                        tool_label = "record_finding"
-                        detail = f": [{block.input.get('severity','?').upper()}] {block.input.get('title','')}"
-                    else:
-                        tool_label = block.name
-                        detail = ""
-
-                    await _status(f"{label}: Running {tool_label}{detail}…")
-
-                    result = await self._execute_tool_call(block.name, block.input)
-
-                    if not session.auto_mode:
-                        return False
-
-                    await _status(f"{label}: {tool_label} finished — analysing…")
-
-                    step_tool_calls.append({
-                        "tool": block.name,
-                        "input": block.input,
-                        "result_preview": result[:500],
-                    })
-
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
-
-            conversation.append({"role": "assistant", "content": assistant_content})
-            conversation.append({"role": "user", "content": tool_results})
-
-        if step_text_parts:
-            final_text = "\n\n".join(step_text_parts)
-            conversation.append({"role": "assistant", "content": final_text})
-
-        summary = "\n\n".join(step_text_parts) if step_text_parts else "(no summary)"
-
-        step_complete_event = {
-            "type": "auto_step_complete",
-            "step_id": step_id,
-            "step_number": step,
-            "summary": summary,
-            "tool_calls": step_tool_calls,
-            "timestamp": _ts(),
-        }
-        session.add_event("auto_step_complete", step_complete_event)
-        await self.broadcast(step_complete_event)
-
-        await _status(f"{label}: Complete")
-        return True
-
-    async def autonomous_loop(self, playbook: dict | None = None):
-        """Run autonomous testing loop with optional playbook phases."""
-        session = self.session
-
-        def _ts():
-            return datetime.now(timezone.utc).isoformat()
-
-        async def _status(msg):
-            await self.broadcast({"type": "auto_status", "message": msg, "timestamp": _ts()})
-
         try:
-            await self._autonomous_loop_inner(playbook, session, _ts, _status)
+            await self._autonomous_loop(phase_sm, target_scope)
         except Exception as e:
             print(f"[ERROR] Autonomous loop crashed: {e}")
             import traceback
             traceback.print_exc()
             try:
-                await _status(f"Autonomous mode error: {e}")
-            except Exception:
-                pass
-            session.auto_mode = False
-            try:
                 await self.broadcast({
-                    "type": "auto_mode_changed",
-                    "enabled": False,
-                    "timestamp": _ts(),
+                    "type": "auto_status",
+                    "message": f"Autonomous mode error: {e}",
+                    "timestamp": self._ts(),
                 })
             except Exception:
                 pass
 
-    async def _autonomous_loop_inner(self, playbook, session, _ts, _status):
-        """Inner autonomous loop — extracted so outer method can catch errors."""
-        await _status(f"Starting autonomous testing: {session.auto_objective}")
+        self._running = False
+        await self.db.update_engagement(self.engagement_id, status="paused")
+        await self.broadcast({
+            "type": "auto_mode_changed",
+            "enabled": False,
+            "timestamp": self._ts(),
+        })
 
-        system = SYSTEM_PROMPT + "\n\n## Current Engagement Context\n" + session.get_context_summary()
+    async def _autonomous_loop(
+        self,
+        phase_sm: PhaseStateMachine,
+        target_scope: list[str],
+    ):
+        """Inner loop that iterates through phases until EXPLOITATION or completion."""
+        # Build conversation context from prior chat history
+        history = await self.db.get_messages(self.engagement_id, limit=50)
+        conversation: list[dict] = [
+            {"role": m["role"], "content": m["content"]} for m in history
+        ]
 
-        conversation: list[dict] = []
+        scope_str = ", ".join(target_scope) if target_scope else "none defined"
 
-        if playbook:
-            phases = playbook["phases"]
-            session.auto_phase_count = len(phases)
+        while self._running:
+            phase = phase_sm.current_phase
 
-            for phase_idx, phase in enumerate(phases):
-                if not session.auto_mode:
-                    return
-
-                session.auto_current_phase = phase_idx + 1
-                phase_name = phase["name"]
-                phase_goal = phase["goal"]
-                phase_tools = ", ".join(phase.get("tools_hint", []))
-                phase_max = phase.get("max_steps", 2)
-
-                phase_event = {
-                    "type": "auto_phase_changed",
-                    "phase_number": phase_idx + 1,
-                    "phase_count": len(phases),
-                    "phase_name": phase_name,
-                    "phase_goal": phase_goal,
-                    "timestamp": _ts(),
-                }
-                session.add_event("auto_phase_changed", phase_event)
-                await self.broadcast(phase_event)
-
-                await _status(f"Phase {phase_idx + 1}/{len(phases)}: {phase_name}")
-
-                phase_prompt = (
-                    f"You are in PHASE {phase_idx + 1} of {len(phases)}: {phase_name}\n\n"
-                    f"PHASE GOAL: {phase_goal}\n"
-                    f"SUGGESTED TOOLS: {phase_tools or 'any appropriate tools'}\n"
-                    f"MAX STEPS FOR THIS PHASE: {phase_max}\n\n"
-                    f"OVERALL OBJECTIVE: {session.auto_objective}\n\n"
-                    f"You are in the PROPOSE phase. Describe what you want to do for your first step in this phase. "
-                    f"State the exact tool and arguments you plan to run, and why. "
-                    f"One tool or one short pipeline per step."
+            # If this phase requires approval (EXPLOITATION), pause
+            if phase.requires_approval:
+                await self.broadcast({
+                    "type": "auto_status",
+                    "message": (
+                        f"Phase {phase.name} requires approval. "
+                        f"Review findings and approve specific ones for exploitation."
+                    ),
+                    "timestamp": self._ts(),
+                })
+                # Persist state so we can resume later
+                await self.db.save_phase_state(
+                    self.engagement_id,
+                    phase.name,
+                    phase_sm.serialize(),
                 )
+                await self.db.update_engagement(
+                    self.engagement_id,
+                    status="awaiting_approval",
+                    current_phase=phase.name,
+                )
+                return  # Caller should wait for resume_exploitation()
 
-                if phase_idx == 0:
-                    phase_prompt = (
-                        f"You are now in AUTONOMOUS MODE for this penetration testing engagement.\n\n"
-                        f"OBJECTIVE: {session.auto_objective}\n\n"
-                        f"You will follow a playbook with {len(phases)} phases. "
-                        f"Each phase has a specific goal. Complete the current phase before moving on.\n\n"
-                        + phase_prompt
-                    )
-
-                conversation.append({"role": "user", "content": phase_prompt})
-
-                for phase_step in range(phase_max):
-                    if not session.auto_mode:
-                        return
-
-                    completed = await self._run_single_step(
-                        session, system, conversation,
-                        step_label=f"Phase {phase_idx + 1}/{len(phases)}: {phase_name} — Step {phase_step + 1}/{phase_max}",
-                    )
-                    if not completed or not session.auto_mode:
-                        if not session.auto_mode:
-                            return
-                        break
-
-                    if phase_step < phase_max - 1 and session.auto_mode:
-                        conversation.append({
-                            "role": "user",
-                            "content": (
-                                f"Step completed. You are still in PHASE {phase_idx + 1}: {phase_name}. "
-                                f"Steps remaining in this phase: {phase_max - phase_step - 1}. "
-                                f"Phase goal: {phase_goal}\n\n"
-                                f"You are in PROPOSE mode. Propose your next step for this phase, "
-                                f"or say 'PHASE COMPLETE' if the goal has been achieved."
-                            ),
-                        })
-
-                if session.auto_mode:
-                    await _status(f"Phase {phase_idx + 1}/{len(phases)}: {phase_name} — complete")
-                    if phase_idx < len(phases) - 1:
-                        conversation.append({
-                            "role": "user",
-                            "content": (
-                                f"Phase {phase_idx + 1} ({phase_name}) is now complete. "
-                                f"Moving to the next phase."
-                            ),
-                        })
-
-            await _status(f"Playbook complete — {len(phases)} phases executed")
-            session.auto_mode = False
+            # Run this phase
             await self.broadcast({
-                "type": "auto_mode_changed",
-                "enabled": False,
-                "timestamp": _ts(),
+                "type": "auto_phase_changed",
+                "phase_name": phase.name,
+                "phase_objective": phase.objective,
+                "timestamp": self._ts(),
             })
 
-        else:
-            # Freeform mode (existing behavior)
-            first_prompt = f"""You are now in AUTONOMOUS MODE for this penetration testing engagement.
+            phase_completed = await self._run_phase(
+                phase_sm, conversation, target_scope,
+            )
 
-OBJECTIVE: {session.auto_objective}
-MAX STEPS: {session.auto_max_steps}
+            if not self._running:
+                return
 
-IMPORTANT — How autonomous mode works:
-- Each step has TWO phases: PROPOSE then EXECUTE.
-- Right now you are in the PROPOSE phase. You do NOT have access to tools.
-- Describe what you want to do in this step: which tool(s) you will run, with what arguments, and why.
-- Be specific — state the exact command(s) you plan to run (e.g. "Run subfinder -d example.com -silent").
-- Do NOT describe more than one logical action per step. One tool or one short pipeline per step.
-- The human operator will review your proposal and approve or reject it.
-- If approved, you will then be asked to execute EXACTLY what you proposed — nothing more, nothing less.
+            # Persist phase state
+            await self.db.save_phase_state(
+                self.engagement_id,
+                phase.name,
+                phase_sm.serialize(),
+            )
 
-Propose your first step now. What is the first thing you want to do and why?"""
+            # Advance to next phase
+            if not phase_sm.advance():
+                # All phases complete
+                await self.broadcast({
+                    "type": "auto_status",
+                    "message": "All phases complete. Autonomous testing finished.",
+                    "timestamp": self._ts(),
+                })
+                await self.db.update_engagement(
+                    self.engagement_id,
+                    status="completed",
+                    current_phase=phase_sm.current_phase.name,
+                )
+                return
 
-            conversation.append({"role": "user", "content": first_prompt})
+            await self.db.update_engagement(
+                self.engagement_id,
+                current_phase=phase_sm.current_phase.name,
+            )
 
-            while session.auto_mode and session.auto_current_step < session.auto_max_steps:
-                completed = await self._run_single_step(session, system, conversation)
-                if not completed or not session.auto_mode:
-                    return
+    async def _run_phase(
+        self,
+        phase_sm: PhaseStateMachine,
+        conversation: list[dict],
+        target_scope: list[str],
+    ) -> bool:
+        """Run the current phase until the AI signals PHASE_COMPLETE or max steps hit.
 
-                if session.auto_mode and session.auto_current_step < session.auto_max_steps:
+        Returns True if phase completed normally, False if stopped.
+        """
+        phase = phase_sm.current_phase
+        scope_str = ", ".join(target_scope) if target_scope else "none defined"
+
+        # Build system prompt with phase-specific additions
+        phase_prompt_addition = phase_sm.get_phase_prompt(scope_str)
+        system = SYSTEM_PROMPT + "\n\n" + phase_prompt_addition
+
+        tools = self._get_tools_schema()
+
+        # Kick off the phase with a user message
+        conversation.append({
+            "role": "user",
+            "content": (
+                f"Begin phase {phase.name}.\n\n"
+                f"Objective: {phase.objective}\n"
+                f"Target scope: {scope_str}\n\n"
+                f"Execute the appropriate tools to achieve the objective. "
+                f"When the objective is complete, say PHASE_COMPLETE."
+            ),
+        })
+
+        step_count = 0
+
+        while self._running and step_count < phase.max_steps:
+            step_count += 1
+
+            await self.broadcast({
+                "type": "auto_status",
+                "message": f"Phase {phase.name} — step {step_count}/{phase.max_steps}",
+                "timestamp": self._ts(),
+            })
+
+            # Call Bedrock
+            response = await asyncio.to_thread(
+                self.bedrock.invoke, conversation, system, tools, 4096,
+            )
+
+            content_blocks = response.get("content", [])
+
+            # Check for text that signals phase completion
+            text_parts = [
+                b["text"] for b in content_blocks if b.get("type") == "text"
+            ]
+            combined_text = "\n".join(text_parts)
+
+            if "PHASE_COMPLETE" in combined_text:
+                # Phase is done
+                conversation.append({"role": "assistant", "content": combined_text})
+                await self.db.save_message(
+                    self.engagement_id, "assistant", combined_text,
+                )
+                await self.broadcast({
+                    "type": "auto_status",
+                    "message": f"Phase {phase.name} complete.",
+                    "timestamp": self._ts(),
+                })
+                return True
+
+            # Process tool_use blocks
+            has_tool_use = any(
+                b.get("type") == "tool_use" for b in content_blocks
+            )
+
+            if not has_tool_use:
+                # No tools and no PHASE_COMPLETE — add response and continue
+                conversation.append({"role": "assistant", "content": combined_text})
+                await self.db.save_message(
+                    self.engagement_id, "assistant", combined_text,
+                )
+                # Prompt the AI to continue
+                conversation.append({
+                    "role": "user",
+                    "content": (
+                        f"Continue with phase {phase.name}. "
+                        f"Steps remaining: {phase.max_steps - step_count}. "
+                        f"Execute tools or say PHASE_COMPLETE if done."
+                    ),
+                })
+                continue
+
+            # Execute tools in this response
+            assistant_content = []
+            tool_results = []
+
+            for block in content_blocks:
+                if block.get("type") == "text":
+                    assistant_content.append({"type": "text", "text": block["text"]})
+                    # Broadcast text
+                    await self.broadcast({
+                        "type": "chat_stream",
+                        "content": block["text"],
+                    })
+                elif block.get("type") == "tool_use":
+                    if not self._running:
+                        return False
+
+                    assistant_content.append({
+                        "type": "tool_use",
+                        "id": block["id"],
+                        "name": block["name"],
+                        "input": block["input"],
+                    })
+
+                    # Status update
+                    tool_label = block["name"]
+                    if block["name"] == "execute_tool":
+                        tool_label = block["input"].get("tool", "tool")
+                    elif block["name"] == "execute_bash":
+                        tool_label = f"bash: {block['input'].get('command', '')[:80]}"
+
+                    await self.broadcast({
+                        "type": "auto_status",
+                        "message": f"Phase {phase.name} — running {tool_label}...",
+                        "timestamp": self._ts(),
+                    })
+
+                    # Refresh scope from DB in case add_to_scope modified it
+                    eng = await self.db.get_engagement(self.engagement_id)
+                    current_scope = eng["target_scope"] if eng else target_scope
+
+                    result = await self._execute_tool_call(
+                        block["name"],
+                        block["input"],
+                        current_scope,
+                        phase=phase.name,
+                    )
+
+                    if not self._running:
+                        return False
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block["id"],
+                        "content": result,
+                    })
+
+            # Append to conversation
+            conversation.append({"role": "assistant", "content": assistant_content})
+            conversation.append({"role": "user", "content": tool_results})
+
+        # Hit max steps without PHASE_COMPLETE — consider phase done
+        await self.broadcast({
+            "type": "auto_status",
+            "message": f"Phase {phase.name} — max steps ({phase.max_steps}) reached.",
+            "timestamp": self._ts(),
+        })
+        return True
+
+    # ------------------------------------------------------------------
+    # Resume exploitation (after human approval)
+    # ------------------------------------------------------------------
+
+    async def resume_exploitation(self, approved_finding_ids: list[str]):
+        """Resume EXPLOITATION phase after tester approves specific findings.
+
+        Args:
+            approved_finding_ids: List of finding IDs the tester approved for exploitation.
+        """
+        self._running = True
+
+        engagement = await self.db.get_engagement(self.engagement_id)
+        if not engagement:
+            return
+
+        target_scope = engagement["target_scope"]
+
+        # Mark approved findings in DB
+        for fid in approved_finding_ids:
+            await self.db.update_finding(fid, exploitation_approved=True)
+
+        # Load approved findings for context
+        all_findings = await self.db.get_findings(self.engagement_id)
+        approved_findings = [
+            f for f in all_findings if f["id"] in approved_finding_ids
+        ]
+
+        if not approved_findings:
+            await self.broadcast({
+                "type": "auto_status",
+                "message": "No approved findings to exploit.",
+                "timestamp": self._ts(),
+            })
+            self._running = False
+            return
+
+        # Build state machine positioned at EXPLOITATION
+        phase_sm = PhaseStateMachine(start_phase="EXPLOITATION")
+        phase = phase_sm.current_phase
+
+        await self.db.update_engagement(
+            self.engagement_id,
+            status="running",
+            current_phase="EXPLOITATION",
+        )
+
+        await self.broadcast({
+            "type": "auto_mode_changed",
+            "enabled": True,
+            "timestamp": self._ts(),
+        })
+
+        scope_str = ", ".join(target_scope) if target_scope else "none defined"
+        phase_prompt_addition = phase_sm.get_phase_prompt(scope_str)
+        system = SYSTEM_PROMPT + "\n\n" + phase_prompt_addition
+
+        tools = self._get_tools_schema()
+
+        # Build findings summary for the AI
+        findings_text = "\n".join(
+            f"- [{f['severity'].upper()}] {f['title']}: {f['description']}"
+            for f in approved_findings
+        )
+
+        # Build conversation from history
+        history = await self.db.get_messages(self.engagement_id, limit=50)
+        conversation: list[dict] = [
+            {"role": m["role"], "content": m["content"]} for m in history
+        ]
+
+        conversation.append({
+            "role": "user",
+            "content": (
+                f"The tester has approved the following findings for exploitation:\n\n"
+                f"{findings_text}\n\n"
+                f"Target scope: {scope_str}\n\n"
+                f"Attempt to exploit these vulnerabilities to confirm their impact. "
+                f"Capture evidence of successful exploitation. "
+                f"When done, say PHASE_COMPLETE."
+            ),
+        })
+
+        try:
+            step_count = 0
+            while self._running and step_count < phase.max_steps:
+                step_count += 1
+
+                await self.broadcast({
+                    "type": "auto_status",
+                    "message": f"EXPLOITATION — step {step_count}/{phase.max_steps}",
+                    "timestamp": self._ts(),
+                })
+
+                response = await asyncio.to_thread(
+                    self.bedrock.invoke, conversation, system, tools, 4096,
+                )
+
+                content_blocks = response.get("content", [])
+
+                text_parts = [
+                    b["text"] for b in content_blocks if b.get("type") == "text"
+                ]
+                combined_text = "\n".join(text_parts)
+
+                if "PHASE_COMPLETE" in combined_text:
+                    conversation.append({"role": "assistant", "content": combined_text})
+                    await self.db.save_message(
+                        self.engagement_id, "assistant", combined_text,
+                    )
+                    break
+
+                has_tool_use = any(
+                    b.get("type") == "tool_use" for b in content_blocks
+                )
+
+                if not has_tool_use:
+                    conversation.append({"role": "assistant", "content": combined_text})
+                    await self.db.save_message(
+                        self.engagement_id, "assistant", combined_text,
+                    )
                     conversation.append({
                         "role": "user",
                         "content": (
-                            f"Step {session.auto_current_step} execution is complete. "
-                            f"Steps remaining: {session.auto_max_steps - session.auto_current_step}. "
-                            f"You are back in PROPOSE mode — you do NOT have tools right now. "
-                            f"Based on what you've found so far, propose the next step. "
-                            f"State the exact tool and arguments you want to run, and why."
+                            f"Continue exploitation. "
+                            f"Steps remaining: {phase.max_steps - step_count}. "
+                            f"Execute tools or say PHASE_COMPLETE if done."
                         ),
                     })
+                    continue
 
-            await _status(
-                f"Autonomous testing completed — {session.auto_current_step} step(s) executed"
-            )
-            session.auto_mode = False
+                assistant_content = []
+                tool_results = []
+
+                for block in content_blocks:
+                    if block.get("type") == "text":
+                        assistant_content.append({"type": "text", "text": block["text"]})
+                        await self.broadcast({
+                            "type": "chat_stream",
+                            "content": block["text"],
+                        })
+                    elif block.get("type") == "tool_use":
+                        if not self._running:
+                            break
+
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": block["id"],
+                            "name": block["name"],
+                            "input": block["input"],
+                        })
+
+                        tool_label = block["name"]
+                        if block["name"] == "execute_tool":
+                            tool_label = block["input"].get("tool", "tool")
+
+                        await self.broadcast({
+                            "type": "auto_status",
+                            "message": f"EXPLOITATION — running {tool_label}...",
+                            "timestamp": self._ts(),
+                        })
+
+                        eng = await self.db.get_engagement(self.engagement_id)
+                        current_scope = eng["target_scope"] if eng else target_scope
+
+                        result = await self._execute_tool_call(
+                            block["name"],
+                            block["input"],
+                            current_scope,
+                            phase="EXPLOITATION",
+                        )
+
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block["id"],
+                            "content": result,
+                        })
+
+                conversation.append({"role": "assistant", "content": assistant_content})
+                conversation.append({"role": "user", "content": tool_results})
+
+        except Exception as e:
+            print(f"[ERROR] Exploitation phase crashed: {e}")
+            import traceback
+            traceback.print_exc()
             await self.broadcast({
-                "type": "auto_mode_changed",
-                "enabled": False,
-                "timestamp": _ts(),
+                "type": "auto_status",
+                "message": f"Exploitation error: {e}",
+                "timestamp": self._ts(),
             })
+
+        self._running = False
+        await self.db.update_engagement(
+            self.engagement_id,
+            status="completed",
+            current_phase="EXPLOITATION",
+        )
+        await self.db.save_phase_state(
+            self.engagement_id,
+            "EXPLOITATION",
+            phase_sm.serialize(),
+        )
+        await self.broadcast({
+            "type": "auto_status",
+            "message": "Exploitation phase complete.",
+            "timestamp": self._ts(),
+        })
+        await self.broadcast({
+            "type": "auto_mode_changed",
+            "enabled": False,
+            "timestamp": self._ts(),
+        })
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ts() -> str:
+        return datetime.now(timezone.utc).isoformat()
