@@ -98,8 +98,9 @@ fi
 
 echo "[5/6] Verifying IAM role has Bedrock access..."
 if command -v aws &>/dev/null; then
-    if aws bedrock list-foundation-models --region "$AWS_REGION" --query 'modelSummaries[?modelId==`us.anthropic.claude-opus-4-6-v1`].modelId' --output text 2>/dev/null | grep -q "anthropic"; then
-        echo "  Bedrock access confirmed (Opus 4 available)"
+    if echo '{"anthropic_version":"bedrock-2023-05-31","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}' | aws bedrock-runtime invoke-model --region "$AWS_REGION" --model-id us.anthropic.claude-opus-4-6-v1 --content-type application/json --accept application/json --body file:///dev/stdin /tmp/bedrock-test.json 2>/dev/null; then
+        echo "  Bedrock access confirmed (Opus 4.6 working)"
+        rm -f /tmp/bedrock-test.json
     else
         echo "  WARNING: Could not verify Bedrock access."
         echo "  Ensure the EC2 IAM role has these permissions:"
