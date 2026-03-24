@@ -13,52 +13,71 @@ Store subfinder API keys on the host filesystem so they survive container restar
 
 ## Design
 
-### 1. Host config file: `configs/provider-config.yaml`
+### 1. Host config file: `configs/subfinder-provider-config.yaml`
 
-A YAML file on the host using subfinder's standard provider-config format:
+Created by the operator on the host (not inside the container — the mount is read-only). Uses subfinder's standard provider-config format:
 
 ```yaml
 chaos:
-  - YOUR_CHAOS_KEY
+  - CHANGEME
 shodan:
-  - YOUR_SHODAN_KEY
+  - CHANGEME
 virustotal:
-  - YOUR_VT_KEY
+  - CHANGEME
 securitytrails:
-  - YOUR_ST_KEY
-# add/remove providers as needed
+  - CHANGEME
+censys:
+  - CHANGEME_ID
+  - CHANGEME_SECRET
 ```
 
-This file is created by the operator and never committed to git.
+This file is gitignored and never committed. It must be created before running subfinder scans; if absent, subfinder silently falls back to public sources only (confirmed: exit 0, no error).
 
-### 2. `.gitignore` entry
+### 2. Template file: `configs/subfinder-provider-config.yaml.example`
 
-`configs/provider-config.yaml` is added to `.gitignore` to prevent accidental key exposure.
+A committed copy of the above with `CHANGEME` placeholders. Serves as documentation for operators cloning the repo.
 
-### 3. Bind mount in `docker-compose.yml`
+### 3. `.gitignore` entry
 
-The toolbox service gains one additional read-only bind mount:
+Add to the **root-level** `.gitignore` (not a nested one):
 
-```yaml
-- ./configs/provider-config.yaml:/opt/pentest/data/subfinder-provider-config.yaml:ro
+```
+configs/subfinder-provider-config.yaml
 ```
 
-This maps the host file directly to the path subfinder already expects. No code changes required.
+### 4. Update `-pc` path in `configs/tool_definitions.yaml`
 
-### 4. Restart
+Change the subfinder `default_args` entry from:
+```
+/opt/pentest/data/subfinder-provider-config.yaml
+```
+to:
+```
+/opt/pentest/configs/subfinder-provider-config.yaml
+```
 
-`docker compose up -d toolbox` picks up the new mount. No rebuild needed.
+The `./configs` directory is already bind-mounted read-only at `/opt/pentest/configs` in `docker-compose.yml` — no new mount entry is needed.
 
-## Trade-offs Considered
+### 5. Restart toolbox
 
-| Approach | Survives volume deletion | Version-control safe | Complexity |
-|---|---|---|---|
-| **Bind mount (chosen)** | Yes | Yes (gitignored) | Low |
-| `.env` + startup script | Yes | Yes | Medium |
-| Write directly to volume | No | N/A | Lowest |
+After creating the config file and saving `tool_definitions.yaml`, recreate the container:
+
+```bash
+docker compose up -d toolbox
+```
+
+This stops and starts the toolbox container, picking up the updated tool definition and making the new config file visible at `/opt/pentest/configs/subfinder-provider-config.yaml`.
+
+## Why not a new bind mount in `docker-compose.yml`?
+
+The toolbox service already mounts the named volume `scan-data` at `/opt/pentest/data`. Docker does not layer a single-file bind mount on top of a named volume at a parent path — the named volume takes precedence and the bind-mounted file would never be visible. Using `/opt/pentest/configs` (already mounted at `./configs:/opt/pentest/configs:ro`) avoids this conflict entirely.
+
+## Behavior when config file is absent
+
+Subfinder treats a missing `-pc` path as a silent no-op and continues with public sources only (tested: exit 0, no error output). Scans will succeed but without API-key-gated sources (Shodan, VirusTotal, etc.).
 
 ## Out of Scope
 
 - Per-engagement key override (already supported via `tool_api_keys` in the engagement setup UI)
 - Key rotation automation
-- Support for providers beyond what subfinder natively supports
+- Making `-pc` conditional on file existence in `tool_definitions.yaml`
