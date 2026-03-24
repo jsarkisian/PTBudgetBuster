@@ -14,7 +14,7 @@ export default function Login({ onLogin }) {
     setLoading(true);
     try {
       const data = await login(username, password);
-      localStorage.setItem("token", data.access_token);
+      localStorage.setItem("token", data.token);
       onLogin(data.user);
     } catch (err) {
       setError(err.message || "Login failed");
