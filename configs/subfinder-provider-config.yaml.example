@@ -1,0 +1,21 @@
+# subfinder provider config — copy to subfinder-provider-config.yaml and fill in your keys
+# Docs: https://github.com/projectdiscovery/subfinder#post-installation-instructions
+# File is gitignored. Edit on the host; the configs/ dir is mounted read-only into the container.
+
+chaos:
+  - CHANGEME
+shodan:
+  - CHANGEME
+virustotal:
+  - CHANGEME
+securitytrails:
+  - CHANGEME
+censys:
+  - CHANGEME_ID
+  - CHANGEME_SECRET
+binaryedge:
+  - CHANGEME
+github:
+  - CHANGEME
+hunter:
+  - CHANGEME
