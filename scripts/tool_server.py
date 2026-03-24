@@ -102,6 +102,35 @@ def _uses_screenshot(cmd: list) -> bool:
     )
 
 
+def _parse_tool_output(tool: str, raw_output: str) -> dict:
+    """Parse raw tool output into structured JSON for key tools."""
+    if tool == "subfinder":
+        hosts = [line.strip() for line in raw_output.strip().split("\n") if line.strip()]
+        return {"type": "subdomain_list", "hosts": hosts, "count": len(hosts)}
+    elif tool == "nuclei":
+        findings = []
+        for line in raw_output.strip().split("\n"):
+            try:
+                findings.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return {"type": "nuclei_results", "findings": findings, "count": len(findings)}
+    elif tool == "naabu":
+        ports = []
+        for line in raw_output.strip().split("\n"):
+            if ":" in line:
+                host, port = line.rsplit(":", 1)
+                ports.append({"host": host.strip(), "port": port.strip()})
+        return {"type": "port_list", "ports": ports, "count": len(ports)}
+    elif tool == "httpx":
+        results = []
+        for line in raw_output.strip().split("\n"):
+            if line.strip():
+                results.append(line.strip())
+        return {"type": "http_probe_results", "results": results, "count": len(results)}
+    return {"type": "raw", "output": raw_output}
+
+
 def build_command(tool_name: str, parameters: dict) -> list:
     """Build command from tool definition and parameters."""
     tool_def = TOOL_DEFS[tool_name]
@@ -254,7 +283,13 @@ async def run_tool_async(task_id: str, cmd: list, stdin_data: str = None,
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "tools": list(TOOL_DEFS.keys())}
+    """Check that the server is up and key tools are accessible."""
+    import shutil
+    tools_check = {}
+    for tool in ["nmap", "subfinder", "nuclei", "httpx", "sqlmap"]:
+        tools_check[tool] = shutil.which(tool) is not None
+    all_ok = all(tools_check.values())
+    return {"status": "healthy" if all_ok else "degraded", "tools": tools_check}
 
 
 @app.get("/tools")
@@ -360,8 +395,10 @@ async def execute_tool_sync(request: ToolRequest):
     }
 
     await run_tool_async(task_id, cmd, stdin_data, request.timeout, False, cwd=str(task_dir))
-    
-    return running_tasks[task_id]
+
+    result = running_tasks[task_id]
+    result["parsed"] = _parse_tool_output(request.tool, result.get("output", ""))
+    return result
 
 
 @app.get("/task/{task_id}")
@@ -642,36 +679,6 @@ async def get_tool_definitions():
     """Return raw tool definitions for editing."""
     return {"tools": TOOL_DEFS}
 
-@app.put("/tools/definitions/{tool_name}")
-async def update_tool_definition(tool_name: str, body: dict):
-    """Update a single tool definition."""
-    global TOOL_DEFS
-    TOOL_DEFS[tool_name] = body
-    _save_tool_definitions()
-    return {"status": "updated", "tool": tool_name}
-
-@app.post("/tools/definitions")
-async def add_tool_definition(body: dict):
-    """Add a new tool definition."""
-    global TOOL_DEFS
-    name = body.get("name")
-    if not name:
-        raise HTTPException(400, "Tool name is required")
-    if name in TOOL_DEFS:
-        raise HTTPException(400, f"Tool '{name}' already exists")
-    TOOL_DEFS[name] = body
-    _save_tool_definitions()
-    return {"status": "added", "tool": name}
-
-@app.delete("/tools/definitions/{tool_name}")
-async def delete_tool_definition(tool_name: str):
-    """Remove a tool definition."""
-    global TOOL_DEFS
-    if tool_name not in TOOL_DEFS:
-        raise HTTPException(404, "Tool not found")
-    del TOOL_DEFS[tool_name]
-    _save_tool_definitions()
-    return {"status": "deleted", "tool": tool_name}
 
 @app.post("/tools/check")
 async def check_tool_installed(body: dict):
@@ -760,16 +767,6 @@ async def install_go_tool(body: dict):
     except subprocess.TimeoutExpired:
         return {"status": "failed", "error": "Install timed out (180s)"}
 
-
-def _save_tool_definitions():
-    """Save tool definitions back to YAML."""
-    config_path = Path("/opt/pentest/configs/tool_definitions.yaml")
-    try:
-        import yaml
-        with open(config_path, "w") as f:
-            yaml.dump({"tools": TOOL_DEFS}, f, default_flow_style=False, sort_keys=False)
-    except Exception as e:
-        print(f"[WARN] Failed to save tool definitions: {e}")
 
 
 @app.post("/tools/install-apt")
