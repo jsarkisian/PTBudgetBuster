@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Trash2, RefreshCw, Clock, Play, CheckCircle, AlertTriangle, Circle, XCircle } from "lucide-react";
-import { listEngagements, deleteEngagement } from "../utils/api";
+import { Plus, Trash2, RefreshCw, Clock, Play, CheckCircle, AlertTriangle, Circle, XCircle, RotateCcw, Square } from "lucide-react";
+import { listEngagements, deleteEngagement, startEngagement } from "../utils/api";
 
 const STATUS_STYLES = {
   created:            { color: "bg-gray-600",   text: "text-gray-100" },
@@ -9,6 +9,8 @@ const STATUS_STYLES = {
   awaiting_approval:  { color: "bg-orange-600",  text: "text-orange-100" },
   completed:          { color: "bg-green-600",   text: "text-green-100" },
   error:              { color: "bg-red-600",     text: "text-red-100" },
+  paused:             { color: "bg-amber-600",   text: "text-amber-100" },
+  stopped:            { color: "bg-gray-700",    text: "text-gray-200" },
 };
 
 const STATUS_ICONS = {
@@ -18,7 +20,11 @@ const STATUS_ICONS = {
   awaiting_approval: AlertTriangle,
   completed: CheckCircle,
   error: XCircle,
+  paused: RotateCcw,
+  stopped: Square,
 };
+
+const isResumable = (status) => status === "paused" || status === "stopped";
 
 function StatusBadge({ status }) {
   const style = STATUS_STYLES[status] || STATUS_STYLES.created;
@@ -45,6 +51,7 @@ export default function Dashboard({ user, navigate }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(null);
+  const [resuming, setResuming] = useState({});
 
   const fetchEngagements = useCallback(async () => {
     try {
@@ -82,6 +89,19 @@ export default function Dashboard({ user, navigate }) {
       setError(err.message || "Failed to delete");
     } finally {
       setDeleting(null);
+    }
+  };
+
+  const handleResume = async (e, eng) => {
+    e.stopPropagation();
+    setResuming((prev) => ({ ...prev, [eng.id]: true }));
+    try {
+      await startEngagement(eng.id);
+      await fetchEngagements();
+    } catch (err) {
+      setError(err.message || "Failed to resume engagement");
+    } finally {
+      setResuming((prev) => ({ ...prev, [eng.id]: false }));
     }
   };
 
@@ -140,7 +160,7 @@ export default function Dashboard({ user, navigate }) {
                 <th className="px-4 py-3 font-medium">Current Phase</th>
                 <th className="px-4 py-3 font-medium">Scheduled</th>
                 <th className="px-4 py-3 font-medium">Created</th>
-                <th className="px-4 py-3 font-medium w-10"></th>
+                <th className="px-4 py-3 font-medium w-24"></th>
               </tr>
             </thead>
             <tbody>
@@ -164,14 +184,26 @@ export default function Dashboard({ user, navigate }) {
                     {formatDate(eng.created_at)}
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={(e) => handleDelete(e, eng)}
-                      disabled={deleting === eng.id}
-                      className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
-                      title="Delete engagement"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {isResumable(eng.status) && (
+                        <button
+                          onClick={(e) => handleResume(e, eng)}
+                          disabled={resuming[eng.id]}
+                          className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+                          title="Resume engagement"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => handleDelete(e, eng)}
+                        disabled={deleting === eng.id}
+                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-gray-700 rounded transition-colors disabled:opacity-50"
+                        title="Delete engagement"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
