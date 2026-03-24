@@ -876,7 +876,22 @@ class PentestAgent:
             async with httpx.AsyncClient(base_url=self.toolbox_url, timeout=30.0) as client:
                 resp = await client.get(f"/files/{tool_input['path']}")
                 if resp.status_code == 200:
-                    return resp.json().get("content", "")
+                    content = resp.json().get("content", "")
+                    await self.db.save_tool_result(self.engagement_id, {
+                        "phase": phase,
+                        "tool": "read_file",
+                        "input": {"path": tool_input["path"]},
+                        "output": content[:10000],
+                        "status": "success",
+                    })
+                    return content
+                await self.db.save_tool_result(self.engagement_id, {
+                    "phase": phase,
+                    "tool": "read_file",
+                    "input": {"path": tool_input["path"]},
+                    "output": f"Error reading file: {resp.status_code}",
+                    "status": "error",
+                })
                 return f"Error reading file: {resp.status_code}"
 
         elif tool_name == "add_to_scope":
@@ -891,7 +906,15 @@ class PentestAgent:
             existing = {h.strip().lower() for h in current_scope}
             new_hosts = [h.strip() for h in hosts if h.strip() and h.strip().lower() not in existing]
             if not new_hosts:
-                return f"No new hosts to add — all {len(hosts)} provided host(s) were already in scope."
+                result_msg = f"No new hosts to add — all {len(hosts)} provided host(s) were already in scope."
+                await self.db.save_tool_result(self.engagement_id, {
+                    "phase": phase,
+                    "tool": "add_to_scope",
+                    "input": {"hosts": hosts, "reason": reason},
+                    "output": result_msg,
+                    "status": "success",
+                })
+                return result_msg
 
             # Create a pending approval and wait for the tester to decide
             approval_id = str(uuid.uuid4())[:8]
@@ -920,10 +943,26 @@ class PentestAgent:
             decision = self.pending_scope_approvals.pop(approval_id, {})
 
             if elapsed >= timeout:
-                return f"Scope addition timed out waiting for tester approval — skipping {len(new_hosts)} host(s)."
+                result_msg = f"Scope addition timed out waiting for tester approval — skipping {len(new_hosts)} host(s)."
+                await self.db.save_tool_result(self.engagement_id, {
+                    "phase": phase,
+                    "tool": "add_to_scope",
+                    "input": {"hosts": hosts, "reason": reason},
+                    "output": result_msg,
+                    "status": "timeout",
+                })
+                return result_msg
 
             if not decision.get("approved"):
-                return f"Tester rejected scope addition of {len(new_hosts)} host(s): {', '.join(new_hosts)}."
+                result_msg = f"Tester rejected scope addition of {len(new_hosts)} host(s): {', '.join(new_hosts)}."
+                await self.db.save_tool_result(self.engagement_id, {
+                    "phase": phase,
+                    "tool": "add_to_scope",
+                    "input": {"hosts": hosts, "reason": reason},
+                    "output": result_msg,
+                    "status": "rejected",
+                })
+                return result_msg
 
             # Update scope in DB
             updated_scope = current_scope + new_hosts
@@ -936,7 +975,15 @@ class PentestAgent:
                 "reason": reason,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            return f"Tester approved: added {len(new_hosts)} host(s) to scope ({reason}): {', '.join(new_hosts)}"
+            result_msg = f"Tester approved: added {len(new_hosts)} host(s) to scope ({reason}): {', '.join(new_hosts)}"
+            await self.db.save_tool_result(self.engagement_id, {
+                "phase": phase,
+                "tool": "add_to_scope",
+                "input": {"hosts": hosts, "reason": reason},
+                "output": result_msg,
+                "status": "success",
+            })
+            return result_msg
 
         return "Unknown tool"
 
@@ -1353,6 +1400,12 @@ class PentestAgent:
             # Append to conversation
             conversation.append({"role": "assistant", "content": assistant_content})
             conversation.append({"role": "user", "content": tool_results})
+
+            # Persist phase state after every step for crash recovery
+            await self.db.save_phase_state(self.engagement_id, phase.name, {
+                "step_index": step_count,
+                "completed": False,
+            })
 
         # Hit max steps without PHASE_COMPLETE — consider phase done
         await self.broadcast({
