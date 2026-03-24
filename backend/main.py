@@ -44,7 +44,7 @@ from user_manager import UserManager
 
 class Settings(BaseSettings):
     aws_region: str = "us-east-1"
-    bedrock_model_id: str = "anthropic.claude-opus-4-20250514"
+    bedrock_model_id: str = "anthropic.claude-opus-4-6-v1"
     toolbox_host: str = "toolbox"
     toolbox_port: int = 9500
     jwt_secret: str = "change-me-in-production"

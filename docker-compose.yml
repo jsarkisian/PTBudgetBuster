@@ -35,7 +35,7 @@ services:
       - ./configs:/configs:ro
     environment:
       - AWS_REGION=${AWS_REGION:-us-east-1}
-      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-anthropic.claude-opus-4-20250514}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-anthropic.claude-opus-4-6-v1}
       - TOOLBOX_HOST=toolbox
       - TOOLBOX_PORT=9500
       - JWT_SECRET=${JWT_SECRET}

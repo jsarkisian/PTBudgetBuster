@@ -295,7 +295,7 @@ class TestAgentInit(unittest.TestCase):
                 toolbox_url="http://toolbox:9500",
                 broadcast_fn=mock_broadcast,
                 region="us-east-1",
-                model_id="anthropic.claude-opus-4-20250514",
+                model_id="anthropic.claude-opus-4-6-v1",
             )
         return agent
 

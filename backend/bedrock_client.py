@@ -17,7 +17,7 @@ class BedrockClient:
     def __init__(
         self,
         region: str = "us-east-1",
-        model_id: str = "anthropic.claude-opus-4-20250514",
+        model_id: str = "anthropic.claude-opus-4-6-v1",
     ):
         self.region = region
         self.model_id = model_id
