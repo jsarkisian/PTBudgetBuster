@@ -8,7 +8,7 @@ tools:
     binary: /root/go/bin/subfinder
     category: reconnaissance
     risk_level: low
-    default_args: ["-silent", "-pc", "/opt/pentest/data/subfinder-provider-config.yaml"]
+    default_args: ["-silent", "-pc", "/opt/pentest/configs/subfinder-provider-config.yaml"]
     parameters:
       domain:
         type: string
