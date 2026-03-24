@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   ArrowLeft, Square, Send, CheckCircle, Circle, AlertTriangle,
-  Loader2, Terminal, Shield, ChevronDown, ChevronRight,
+  Loader2, Terminal, Shield, ChevronDown, ChevronRight, RotateCcw,
 } from "lucide-react";
-import { getEngagement, stopEngagement, sendMessage } from "../utils/api";
+import { getEngagement, stopEngagement, sendMessage, startEngagement } from "../utils/api";
 import { connectWS } from "../utils/ws";
 
 const PHASES = [
@@ -21,6 +21,8 @@ const SEVERITY_COLORS = {
   low: "bg-blue-600 text-blue-100",
   info: "bg-gray-600 text-gray-100",
 };
+
+const isResumable = (status) => status === "paused" || status === "stopped";
 
 function PhaseBar({ currentPhase, completedPhases, objective }) {
   const currentIdx = PHASES.findIndex((p) => p.id === currentPhase);
@@ -202,6 +204,7 @@ export default function EngagementLive({ engagementId, navigate }) {
   const [completed, setCompleted] = useState(false);
   const [message, setMessage] = useState("");
   const [stopping, setStopping] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const logRef = useRef(null);
   const wsRef = useRef(null);
 
@@ -267,6 +270,24 @@ export default function EngagementLive({ engagementId, navigate }) {
     }
   };
 
+  const handleResume = async () => {
+    setResuming(true);
+    try {
+      await startEngagement(engagementId);
+      const eng = await getEngagement(engagementId);
+      setEngagement(eng);
+      if (eng.current_phase) setCurrentPhase(eng.current_phase);
+    } catch (err) {
+      setEvents((prev) => [...prev, {
+        type: "auto_status",
+        message: `Resume failed: ${err.message}`,
+        timestamp: new Date().toISOString(),
+      }]);
+    } finally {
+      setResuming(false);
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!message.trim()) return;
@@ -292,14 +313,25 @@ export default function EngagementLive({ engagementId, navigate }) {
             {engagement?.name || "Engagement"}
           </h2>
         </div>
-        <button
-          onClick={handleStop}
-          disabled={stopping || completed}
-          className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm px-3 py-1.5 rounded font-medium transition-colors"
-        >
-          <Square className="w-3.5 h-3.5" />
-          Stop
-        </button>
+        {isResumable(engagement?.status) ? (
+          <button
+            onClick={handleResume}
+            disabled={resuming}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm px-3 py-1.5 rounded font-medium transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Resume
+          </button>
+        ) : (
+          <button
+            onClick={handleStop}
+            disabled={stopping || completed || resuming}
+            className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm px-3 py-1.5 rounded font-medium transition-colors"
+          >
+            <Square className="w-3.5 h-3.5" />
+            Stop
+          </button>
+        )}
       </div>
 
       {/* Banners */}
