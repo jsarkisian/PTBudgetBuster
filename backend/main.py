@@ -174,6 +174,7 @@ async def check_password_change_required(request: Request, call_next):
     exempt_paths = [
         "/api/auth/login",
         "/api/auth/change-password",
+        "/api/auth/me",
         "/api/health",
     ]
     if any(path == p for p in exempt_paths):
