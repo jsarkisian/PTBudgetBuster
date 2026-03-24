@@ -1,20 +1,14 @@
-#version: "3.8"
-
 services:
   toolbox:
     build:
       context: .
       dockerfile: Dockerfile.toolbox
-    container_name: mcp-pt-toolbox
+    container_name: pt-toolbox
     volumes:
       - scan-data:/opt/pentest/data
-      - tool-configs:/opt/pentest/configs
+      - ./configs:/opt/pentest/configs:ro
     networks:
-      - mcp-pt-net
-    # To reach targets on a Tailscale tailnet, uncomment the line below
-    # and comment out the 'networks' block above. This gives the toolbox
-    # direct access to the host's network (including Tailscale).
-    # network_mode: "host"
+      - pt-net
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -22,48 +16,53 @@ services:
       - NET_RAW
       - NET_ADMIN
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9500/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: mcp-pt-backend
+    container_name: pt-backend
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - scan-data:/opt/pentest/data
       - ./backend:/app
-      - ./configs:/configs
-      - /root/.ssh:/root/.ssh
+      - ./configs:/configs:ro
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-anthropic.claude-opus-4-20250514}
       - TOOLBOX_HOST=toolbox
       - TOOLBOX_PORT=9500
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_SECRET=${JWT_SECRET}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000}
     depends_on:
-      - toolbox
+      toolbox:
+        condition: service_healthy
     networks:
-      - mcp-pt-net
+      - pt-net
     restart: unless-stopped
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: mcp-pt-frontend
+    container_name: pt-frontend
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       - backend
     networks:
-      - mcp-pt-net
+      - pt-net
     restart: unless-stopped
 
 volumes:
   scan-data:
-  tool-configs:
 
 networks:
-  mcp-pt-net:
+  pt-net:
     driver: bridge
