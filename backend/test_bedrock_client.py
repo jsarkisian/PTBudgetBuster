@@ -18,7 +18,7 @@ def _make_client():
     """Instantiate BedrockClient without hitting AWS."""
     obj = BedrockClient.__new__(BedrockClient)
     obj.region = "us-east-1"
-    obj.model_id = "anthropic.claude-opus-4-6-v1"
+    obj.model_id = "us.anthropic.claude-opus-4-6-v1"
     obj.client = MagicMock()  # stub out the boto3 client
     return obj
 
@@ -36,7 +36,7 @@ class TestFormatRequest:
 
         body = bc._format_request(messages, system, tools=[], max_tokens=1024)
 
-        assert body["anthropic_version"] == "bedrock-2023-10-16"
+        assert body["anthropic_version"] == "bedrock-2023-05-31"
         assert body["system"] == [{"type": "text", "text": "You are helpful."}]
         assert body["messages"] == messages
         assert body["max_tokens"] == 1024
@@ -232,13 +232,13 @@ class TestInvoke:
         # Check that invoke_model was called correctly
         bc.client.invoke_model.assert_called_once()
         call_kwargs = bc.client.invoke_model.call_args[1]
-        assert call_kwargs["modelId"] == "anthropic.claude-opus-4-6-v1"
+        assert call_kwargs["modelId"] == "us.anthropic.claude-opus-4-6-v1"
         assert call_kwargs["contentType"] == "application/json"
         assert call_kwargs["accept"] == "application/json"
 
         # Verify the request body sent to boto3
         sent_body = json.loads(call_kwargs["body"])
-        assert sent_body["anthropic_version"] == "bedrock-2023-10-16"
+        assert sent_body["anthropic_version"] == "bedrock-2023-05-31"
         assert sent_body["messages"] == [{"role": "user", "content": "ping"}]
 
         # Verify parsed result

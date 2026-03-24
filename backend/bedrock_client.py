@@ -17,7 +17,7 @@ class BedrockClient:
     def __init__(
         self,
         region: str = "us-east-1",
-        model_id: str = "anthropic.claude-opus-4-6-v1",
+        model_id: str = "us.anthropic.claude-opus-4-6-v1",
     ):
         self.region = region
         self.model_id = model_id
@@ -42,7 +42,7 @@ class BedrockClient:
             Dict ready to be JSON-serialized and sent to invoke_model.
         """
         body = {
-            "anthropic_version": "bedrock-2023-10-16",
+            "anthropic_version": "bedrock-2023-05-31",
             "system": [{"type": "text", "text": system}],
             "messages": messages,
             "max_tokens": max_tokens,

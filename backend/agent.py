@@ -507,7 +507,7 @@ class PentestAgent:
         toolbox_url: str,
         broadcast_fn: Callable,
         region: str = "us-east-1",
-        model_id: str = "anthropic.claude-opus-4-6-v1",
+        model_id: str = "us.anthropic.claude-opus-4-6-v1",
     ):
         self.db = db
         self.engagement_id = engagement_id

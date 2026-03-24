@@ -84,7 +84,7 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
     cat > "$INSTALL_DIR/.env" <<EOF
 # PTBudgetBuster Configuration
 AWS_REGION=${AWS_REGION}
-BEDROCK_MODEL_ID=anthropic.claude-opus-4-6-v1
+BEDROCK_MODEL_ID=us.anthropic.claude-opus-4-6-v1
 JWT_SECRET=${JWT_SECRET}
 ALLOWED_ORIGINS=http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "localhost"):3000
 BACKEND_PORT=8000
@@ -98,7 +98,7 @@ fi
 
 echo "[5/6] Verifying IAM role has Bedrock access..."
 if command -v aws &>/dev/null; then
-    if aws bedrock list-foundation-models --region "$AWS_REGION" --query 'modelSummaries[?modelId==`anthropic.claude-opus-4-6-v1`].modelId' --output text 2>/dev/null | grep -q "anthropic"; then
+    if aws bedrock list-foundation-models --region "$AWS_REGION" --query 'modelSummaries[?modelId==`us.anthropic.claude-opus-4-6-v1`].modelId' --output text 2>/dev/null | grep -q "anthropic"; then
         echo "  Bedrock access confirmed (Opus 4 available)"
     else
         echo "  WARNING: Could not verify Bedrock access."
