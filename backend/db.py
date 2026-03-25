@@ -82,6 +82,15 @@ CREATE TABLE IF NOT EXISTS config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS tool_lessons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tool_name TEXT NOT NULL,
+    lesson TEXT NOT NULL,
+    raw_error TEXT NOT NULL,
+    engagement_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -199,6 +208,38 @@ class Database:
         ) as cursor:
             row = await cursor.fetchone()
             return json.loads(row["state"]) if row else None
+
+    # -- Tool Lessons -----------------------------------------------
+
+    async def save_tool_lesson(
+        self,
+        engagement_id: str,
+        tool_name: str,
+        lesson: str,
+        raw_error: str,
+    ):
+        """Persist a syntax-error lesson for cross-run learning."""
+        await self._db.execute(
+            """INSERT INTO tool_lessons (engagement_id, tool_name, lesson, raw_error, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (engagement_id, tool_name, lesson, raw_error[:2000], _now()),
+        )
+        await self._db.commit()
+
+    async def get_tool_lessons(self, limit: int = 30) -> list[dict]:
+        """Return deduplicated lessons ordered by most recently seen.
+
+        Deduplicates by (tool_name, lesson) pair via GROUP BY.
+        """
+        async with self._db.execute(
+            f"""SELECT tool_name, lesson
+                FROM tool_lessons
+                GROUP BY tool_name, lesson
+                ORDER BY MAX(created_at) DESC
+                LIMIT {limit}"""
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [{"tool_name": row["tool_name"], "lesson": row["lesson"]} for row in rows]
 
     # -- Tool Results ----------------------------------------------
 

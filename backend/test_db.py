@@ -363,3 +363,45 @@ class TestConfig:
         run(db.set_config("settings", {"a": 1, "b": [2, 3]}))
         val = run(db.get_config("settings"))
         assert val == {"a": 1, "b": [2, 3]}
+
+
+class TestToolLessons:
+    def test_save_and_retrieve_lesson(self, db):
+        run(db.save_tool_lesson("eng-1", "nmap", "flag '-sT' is invalid", "nmap: invalid option"))
+        lessons = run(db.get_tool_lessons())
+        assert len(lessons) == 1
+        assert lessons[0]["tool_name"] == "nmap"
+        assert lessons[0]["lesson"] == "flag '-sT' is invalid"
+
+    def test_get_lessons_deduplicates(self, db):
+        # Same tool_name + lesson saved three times
+        run(db.save_tool_lesson("eng-1", "nmap", "flag '-sT' is invalid", "error1"))
+        run(db.save_tool_lesson("eng-2", "nmap", "flag '-sT' is invalid", "error2"))
+        run(db.save_tool_lesson("eng-3", "nmap", "flag '-sT' is invalid", "error3"))
+        lessons = run(db.get_tool_lessons())
+        assert len(lessons) == 1
+
+    def test_get_lessons_multiple_tools(self, db):
+        run(db.save_tool_lesson("eng-1", "nmap", "flag '-sT' is invalid", "err"))
+        run(db.save_tool_lesson("eng-1", "subfinder", "flag '-timeout' is not supported", "err"))
+        lessons = run(db.get_tool_lessons())
+        assert len(lessons) == 2
+        tool_names = {l["tool_name"] for l in lessons}
+        assert "nmap" in tool_names
+        assert "subfinder" in tool_names
+
+    def test_get_lessons_respects_limit(self, db):
+        for i in range(10):
+            run(db.save_tool_lesson("eng-1", f"tool{i}", f"lesson {i}", "err"))
+        lessons = run(db.get_tool_lessons(limit=5))
+        assert len(lessons) == 5
+
+    def test_get_lessons_empty(self, db):
+        lessons = run(db.get_tool_lessons())
+        assert lessons == []
+
+    def test_lesson_keys(self, db):
+        run(db.save_tool_lesson("eng-1", "nmap", "some lesson", "raw error text"))
+        lessons = run(db.get_tool_lessons())
+        assert "tool_name" in lessons[0]
+        assert "lesson" in lessons[0]
