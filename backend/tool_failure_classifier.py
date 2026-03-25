@@ -25,6 +25,7 @@ _SYNTAX_PATTERNS = [
     "invalid option",
     "unknown flag",
     "unrecognized flag",
+    "unrecognized option",
     "usage:",
     "command not found",
     "invalid argument",
@@ -54,9 +55,9 @@ def _extract_lesson(tool_name: str, error: str, output: str) -> str:
     if m:
         return f"flag '{m.group(1)}' is not supported"
 
-    # "invalid option: X", "unknown flag: X", "unrecognized flag: X", "no such option: X"
+    # "invalid option: X", "unknown flag: X", "unrecognized flag: X", "unrecognized option: X", "no such option: X"
     m = re.search(
-        r"(?:invalid option|unknown flag|unrecognized flag|no such option):\s*(\S+)",
+        r"(?:invalid option|unknown flag|unrecognized flag|unrecognized option|no such option):\s*(\S+)",
         combined,
         re.IGNORECASE,
     )

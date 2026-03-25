@@ -20,7 +20,7 @@ class TestClassifyFailureSyntaxErrors(unittest.TestCase):
         self.assertIn("--bad-flag", result.lesson)
 
     def test_unrecognized_in_output(self):
-        result = classify_failure("nmap", "unrecognized flag: --foo", "", "error")
+        result = classify_failure("nmap", "unrecognized option --foo", "", "error")
         self.assertEqual(result.failure_type, FailureType.SYNTAX_ERROR)
 
     def test_command_not_found(self):
