@@ -77,6 +77,10 @@ async def lifespan(app: FastAPI):
     await user_mgr.ensure_admin()
     # Store on app state so it's accessible from dependency injection
     app.state.user_mgr = user_mgr
+    # Mark any orphaned "running" engagements as stopped (e.g. after server restart)
+    for eng in await db.list_engagements():
+        if eng["status"] == "running":
+            await db.update_engagement(eng["id"], status="stopped")
     scheduler.start()
     # Scheduler restore — stub until Task 6 (scheduler.py) is implemented
     try:
@@ -438,10 +442,17 @@ async def start_engagement(engagement_id: str, user=Depends(get_current_user)):
 
 @app.post("/api/engagements/{engagement_id}/stop")
 async def stop_engagement(engagement_id: str, user=Depends(get_current_user)):
-    agent = active_agents.get(engagement_id)
-    if not agent:
-        raise HTTPException(404, "No running agent for this engagement")
-    agent.stop()
+    engagement = await db.get_engagement(engagement_id)
+    if not engagement:
+        raise HTTPException(404, "Engagement not found")
+    # Set flag on agent if in memory
+    agent = active_agents.pop(engagement_id, None)
+    if agent:
+        agent.stop()
+    # Cancel the asyncio task so blocked tool calls are interrupted
+    task = _agent_tasks.pop(engagement_id, None)
+    if task and not task.done():
+        task.cancel()
     await db.update_engagement(engagement_id, status="stopped")
     await broadcast(engagement_id, {
         "type": "auto_mode_changed",
