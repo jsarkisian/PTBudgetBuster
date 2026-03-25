@@ -504,6 +504,25 @@ async def list_findings(engagement_id: str, user=Depends(get_current_user)):
     return await db.get_findings(engagement_id)
 
 
+@app.get("/api/engagements/{engagement_id}/events")
+async def list_events(engagement_id: str, user=Depends(get_current_user)):
+    """Return historical tool results as event objects for log replay on refresh."""
+    engagement = await db.get_engagement(engagement_id)
+    if not engagement:
+        raise HTTPException(404, "Engagement not found")
+    rows = await db.get_tool_results(engagement_id)
+    return [
+        {
+            "type": "tool_result",
+            "tool": r["tool"],
+            "result": {"output": r["output"], "status": r["status"]},
+            "phase": r["phase"],
+            "timestamp": r["created_at"],
+        }
+        for r in rows
+    ]
+
+
 @app.get("/api/engagements/{engagement_id}/findings/export")
 async def export_findings(engagement_id: str, user=Depends(get_current_user)):
     """Export findings as downloadable JSON."""

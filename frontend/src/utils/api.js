@@ -46,6 +46,9 @@ export const approveExploitation = (id, findingIds) =>
 export const getFindings = (id) => request(`/api/engagements/${id}/findings`);
 export const exportFindings = (id) => request(`/api/engagements/${id}/findings/export`);
 
+// Events (historical log)
+export const getEvents = (id) => request(`/api/engagements/${id}/events`);
+
 // Chat (mid-run guidance)
 export const sendMessage = (id, message) =>
   request(`/api/engagements/${id}/message`, { method: "POST", body: JSON.stringify({ message }) });

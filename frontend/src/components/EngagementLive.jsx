@@ -3,7 +3,7 @@ import {
   ArrowLeft, Square, Send, CheckCircle, Circle, AlertTriangle,
   Loader2, Terminal, Shield, ChevronDown, ChevronRight, RotateCcw,
 } from "lucide-react";
-import { getEngagement, stopEngagement, sendMessage, startEngagement } from "../utils/api";
+import { getEngagement, stopEngagement, sendMessage, startEngagement, getEvents, getFindings } from "../utils/api";
 import { connectWS } from "../utils/ws";
 
 const PHASES = [
@@ -231,21 +231,25 @@ export default function EngagementLive({ engagementId, navigate }) {
     currentPhaseRef.current = currentPhase;
   }, [currentPhase]);
 
-  // Fetch initial engagement data
+  // Fetch initial engagement data, historical events, and findings
   useEffect(() => {
-    getEngagement(engagementId)
-      .then((eng) => {
-        setEngagement(eng);
-        if (eng.current_phase) {
-          setCurrentPhase(eng.current_phase);
-          // Mark all phases before current as completed on initial load
-          const idx = PHASES.findIndex((p) => p.id === eng.current_phase);
-          if (idx > 0) setCompletedPhases(PHASES.slice(0, idx).map((p) => p.id));
-        }
-        if (eng.status === "awaiting_approval") setAwaitingApproval(true);
-        if (eng.status === "completed") setCompleted(true);
-      })
-      .catch(() => {});
+    Promise.all([
+      getEngagement(engagementId),
+      getEvents(engagementId),
+      getFindings(engagementId),
+    ]).then(([eng, historicalEvents, historicalFindings]) => {
+      setEngagement(eng);
+      if (eng.current_phase) {
+        setCurrentPhase(eng.current_phase);
+        // Mark all phases before current as completed on initial load
+        const idx = PHASES.findIndex((p) => p.id === eng.current_phase);
+        if (idx > 0) setCompletedPhases(PHASES.slice(0, idx).map((p) => p.id));
+      }
+      if (eng.status === "awaiting_approval") setAwaitingApproval(true);
+      if (eng.status === "completed") setCompleted(true);
+      if (historicalEvents.length > 0) setEvents(historicalEvents);
+      if (historicalFindings.length > 0) setFindings(historicalFindings);
+    }).catch(() => {});
   }, [engagementId]);
 
   // WebSocket connection
