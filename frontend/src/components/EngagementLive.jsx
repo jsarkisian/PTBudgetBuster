@@ -254,8 +254,10 @@ export default function EngagementLive({ engagementId, navigate }) {
 
   // WebSocket connection
   useEffect(() => {
+    const SILENT_EVENTS = new Set(["presence_update", "auto_mode_changed", "exploitation_approved", "scope_updated"]);
+
     const ws = connectWS(engagementId, (event) => {
-      setEvents((prev) => [...prev, event]);
+      if (!SILENT_EVENTS.has(event.type)) setEvents((prev) => [...prev, event]);
 
       switch (event.type) {
         case "phase_changed":
