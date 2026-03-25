@@ -533,21 +533,46 @@ async def list_findings(engagement_id: str, user=Depends(get_current_user)):
 
 @app.get("/api/engagements/{engagement_id}/events")
 async def list_events(engagement_id: str, user=Depends(get_current_user)):
-    """Return historical tool results as event objects for log replay on refresh."""
+    """Return historical tool results as event objects for log replay on refresh.
+
+    Emits a synthetic phase_changed event each time the phase transitions,
+    plus a tool_start + tool_result pair per row so the log is readable.
+    """
     engagement = await db.get_engagement(engagement_id)
     if not engagement:
         raise HTTPException(404, "Engagement not found")
     rows = await db.get_tool_results(engagement_id)
-    return [
-        {
-            "type": "tool_result",
+    events = []
+    current_phase = None
+    for r in rows:
+        # Inject phase change marker when phase transitions
+        if r["phase"] != current_phase:
+            current_phase = r["phase"]
+            events.append({
+                "type": "phase_changed",
+                "phase": r["phase"],
+                "objective": "",
+                "timestamp": r["created_at"],
+            })
+        # Show what the tool was called with
+        inp = r["input"] or {}
+        events.append({
+            "type": "tool_start",
             "tool": r["tool"],
-            "result": {"output": r["output"], "status": r["status"]},
-            "phase": r["phase"],
+            "parameters": inp,
             "timestamp": r["created_at"],
-        }
-        for r in rows
-    ]
+        })
+        # Only include the result if there's something to show
+        output = r["output"] or ""
+        if output.strip():
+            events.append({
+                "type": "tool_result",
+                "tool": r["tool"],
+                "result": {"output": output, "status": r["status"]},
+                "phase": r["phase"],
+                "timestamp": r["created_at"],
+            })
+    return events
 
 
 @app.get("/api/engagements/{engagement_id}/findings/export")

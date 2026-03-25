@@ -1209,9 +1209,9 @@ class PentestAgent:
 
             # Run this phase
             await self.broadcast({
-                "type": "auto_phase_changed",
-                "phase_name": phase.name,
-                "phase_objective": phase.objective,
+                "type": "phase_changed",
+                "phase": phase.name,
+                "objective": phase.objective,
                 "timestamp": self._ts(),
             })
 
