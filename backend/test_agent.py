@@ -434,5 +434,175 @@ class TestSystemPrompt(unittest.TestCase):
         self.assertIn("nmap", SYSTEM_PROMPT)
 
 
+# ===========================================================================
+# _run_phase resume continuity tests
+# ===========================================================================
+
+import asyncio
+import json as _json
+
+
+class TestRunPhaseResume(unittest.IsolatedAsyncioTestCase):
+    """Test that _run_phase restores conversation from phase_state on resume."""
+
+    def _make_agent(self):
+        mock_db = MagicMock()
+        mock_broadcast = AsyncMock()
+        with patch("agent.BedrockClient"):
+            agent = PentestAgent(
+                db=mock_db,
+                engagement_id="test-eng",
+                toolbox_url="http://toolbox:9500",
+                broadcast_fn=mock_broadcast,
+            )
+        agent._running = True
+        agent.broadcast = mock_broadcast
+        return agent
+
+    def _make_phase_sm(self):
+        from phases import PhaseStateMachine
+        sm = PhaseStateMachine()
+        return sm
+
+    async def test_fresh_start_appends_kickoff_message(self):
+        """When no saved phase_state, kick-off message is appended."""
+        agent = self._make_agent()
+        agent.db.get_phase_state = AsyncMock(return_value=None)
+        agent.db.save_phase_state = AsyncMock()
+        agent.db.save_message = AsyncMock()
+        agent.db.get_engagement = AsyncMock(return_value={
+            "target_scope": ["example.com"],
+        })
+        # Bedrock returns PHASE_COMPLETE immediately
+        agent.bedrock.invoke = MagicMock(return_value={
+            "content": [{"type": "text", "text": "PHASE_COMPLETE"}]
+        })
+
+        phase_sm = self._make_phase_sm()
+        conversation = []
+        await agent._run_phase(phase_sm, conversation, ["example.com"])
+
+        # Kick-off message appended as first message
+        assert len(conversation) >= 1
+        assert conversation[0]["role"] == "user"
+        assert "Begin phase" in conversation[0]["content"]
+
+    async def test_resume_restores_conversation_from_checkpoint(self):
+        """When phase_state has step_index > 0 and conversation_json, conversation is replaced."""
+        agent = self._make_agent()
+
+        saved_conv = [
+            {"role": "user", "content": "Begin phase RECON.\n\nObjective: ..."},
+            {"role": "assistant", "content": [{"type": "text", "text": "Starting recon..."}]},
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "x", "content": "output"}]},
+        ]
+        agent.db.get_phase_state = AsyncMock(return_value={
+            "step_index": 3,
+            "completed": False,
+            "conversation_json": _json.dumps(saved_conv),
+        })
+        agent.db.save_phase_state = AsyncMock()
+        agent.db.save_message = AsyncMock()
+        agent.db.get_engagement = AsyncMock(return_value={"target_scope": ["example.com"]})
+        agent.bedrock.invoke = MagicMock(return_value={
+            "content": [{"type": "text", "text": "PHASE_COMPLETE"}]
+        })
+
+        phase_sm = self._make_phase_sm()
+        conversation = [{"role": "user", "content": "stale message from _autonomous_loop"}]
+        await agent._run_phase(phase_sm, conversation, ["example.com"])
+
+        # Conversation was replaced with checkpoint (stale message gone)
+        assert conversation[0]["role"] == "user"
+        assert conversation[0]["content"] == "Begin phase RECON.\n\nObjective: ..."
+        # No second kick-off message
+        kickoff_count = sum(
+            1 for m in conversation
+            if m["role"] == "user" and isinstance(m["content"], str) and "Begin phase" in m["content"]
+        )
+        assert kickoff_count == 1
+
+    async def test_resume_broadcasts_status(self):
+        """Resume path broadcasts an auto_status message with step number."""
+        agent = self._make_agent()
+
+        saved_conv = [{"role": "user", "content": "Begin phase RECON.\n\nObjective: ..."}]
+        agent.db.get_phase_state = AsyncMock(return_value={
+            "step_index": 2,
+            "completed": False,
+            "conversation_json": _json.dumps(saved_conv),
+        })
+        agent.db.save_phase_state = AsyncMock()
+        agent.db.save_message = AsyncMock()
+        agent.db.get_engagement = AsyncMock(return_value={"target_scope": ["example.com"]})
+        agent.bedrock.invoke = MagicMock(return_value={
+            "content": [{"type": "text", "text": "PHASE_COMPLETE"}]
+        })
+
+        phase_sm = self._make_phase_sm()
+        await agent._run_phase(phase_sm, [], ["example.com"])
+
+        broadcast_calls = agent.broadcast.call_args_list
+        resume_msgs = [
+            c for c in broadcast_calls
+            if c[0][0].get("type") == "auto_status"
+            and "Resuming" in c[0][0].get("message", "")
+        ]
+        assert len(resume_msgs) == 1
+        assert "2" in resume_msgs[0][0][0]["message"]
+
+    async def test_conversation_json_saved_after_tool_use_step(self):
+        """After a tool-use step, save_phase_state is called with conversation_json."""
+        agent = self._make_agent()
+        agent.db.get_phase_state = AsyncMock(return_value=None)
+        agent.db.save_phase_state = AsyncMock()
+        agent.db.save_message = AsyncMock()
+        agent.db.save_tool_result = AsyncMock()
+        agent.db.get_engagement = AsyncMock(return_value={"target_scope": ["example.com"]})
+
+        # First response: tool use. Second response: PHASE_COMPLETE.
+        tool_response = {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "tool1",
+                    "name": "execute_bash",
+                    "input": {"command": "echo hello"},
+                }
+            ]
+        }
+        complete_response = {
+            "content": [{"type": "text", "text": "PHASE_COMPLETE"}]
+        }
+        agent.bedrock.invoke = MagicMock(side_effect=[tool_response, complete_response])
+
+        # Mock the toolbox HTTP call
+        import httpx
+        mock_response = MagicMock()
+        mock_response.json = MagicMock(return_value={"output": "hello", "status": "success", "error": ""})
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_client_cls.return_value = mock_client
+
+            phase_sm = self._make_phase_sm()
+            await agent._run_phase(phase_sm, [], ["example.com"])
+
+        # save_phase_state should have been called with conversation_json
+        save_calls = agent.db.save_phase_state.call_args_list
+        tool_step_saves = [
+            c for c in save_calls
+            if isinstance(c[0][2], dict) and "conversation_json" in c[0][2]
+        ]
+        assert len(tool_step_saves) >= 1
+        saved_state = tool_step_saves[0][0][2]
+        assert saved_state["step_index"] == 1
+        restored = _json.loads(saved_state["conversation_json"])
+        assert len(restored) > 0
+
+
 if __name__ == "__main__":
     unittest.main()

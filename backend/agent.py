@@ -1270,19 +1270,33 @@ class PentestAgent:
 
         tools = self._get_tools_schema()
 
-        # Kick off the phase with a user message
-        conversation.append({
-            "role": "user",
-            "content": (
-                f"Begin phase {phase.name}.\n\n"
-                f"Objective: {phase.objective}\n"
-                f"Target scope: {scope_str}\n\n"
-                f"Execute the appropriate tools to achieve the objective. "
-                f"When the objective is complete, say PHASE_COMPLETE."
-            ),
-        })
-
+        # Resume from checkpoint if available, otherwise kick off fresh
+        saved = await self.db.get_phase_state(self.engagement_id, phase.name)
         step_count = 0
+
+        if saved and saved.get("step_index", 0) > 0 and saved.get("conversation_json"):
+            # Restore full conversation from checkpoint (includes tool call/result pairs).
+            # MUST use .clear() + .extend() — not reassignment — because _autonomous_loop
+            # holds a reference to this list.
+            conversation.clear()
+            conversation.extend(json.loads(saved["conversation_json"]))
+            step_count = saved["step_index"]
+            await self.broadcast({
+                "type": "auto_status",
+                "message": f"Resuming {phase.name} from step {step_count}/{phase.max_steps}...",
+                "timestamp": self._ts(),
+            })
+        else:
+            conversation.append({
+                "role": "user",
+                "content": (
+                    f"Begin phase {phase.name}.\n\n"
+                    f"Objective: {phase.objective}\n"
+                    f"Target scope: {scope_str}\n\n"
+                    f"Execute the appropriate tools to achieve the objective. "
+                    f"When the objective is complete, say PHASE_COMPLETE."
+                ),
+            })
 
         while self._running and step_count < phase.max_steps:
             step_count += 1
@@ -1405,6 +1419,7 @@ class PentestAgent:
             await self.db.save_phase_state(self.engagement_id, phase.name, {
                 "step_index": step_count,
                 "completed": False,
+                "conversation_json": json.dumps(conversation),
             })
 
         # Hit max steps without PHASE_COMPLETE — consider phase done
