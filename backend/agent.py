@@ -958,55 +958,7 @@ class PentestAgent:
                 })
                 return result_msg
 
-            # Create a pending approval and wait for the tester to decide
-            approval_id = str(uuid.uuid4())[:8]
-            self.pending_scope_approvals[approval_id] = {
-                "approval_id": approval_id,
-                "hosts": new_hosts,
-                "reason": reason,
-                "resolved": False,
-                "approved": None,
-            }
-
-            await self.broadcast({
-                "type": "scope_addition_pending",
-                "approval_id": approval_id,
-                "hosts": new_hosts,
-                "reason": reason,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-
-            # Poll until resolved or timeout (90 s)
-            timeout, elapsed = 90, 0
-            while not self.pending_scope_approvals[approval_id]["resolved"] and elapsed < timeout:
-                await asyncio.sleep(1)
-                elapsed += 1
-
-            decision = self.pending_scope_approvals.pop(approval_id, {})
-
-            if elapsed >= timeout:
-                result_msg = f"Scope addition timed out waiting for tester approval — skipping {len(new_hosts)} host(s)."
-                await self.db.save_tool_result(self.engagement_id, {
-                    "phase": phase,
-                    "tool": "add_to_scope",
-                    "input": {"hosts": hosts, "reason": reason},
-                    "output": result_msg,
-                    "status": "timeout",
-                })
-                return result_msg
-
-            if not decision.get("approved"):
-                result_msg = f"Tester rejected scope addition of {len(new_hosts)} host(s): {', '.join(new_hosts)}."
-                await self.db.save_tool_result(self.engagement_id, {
-                    "phase": phase,
-                    "tool": "add_to_scope",
-                    "input": {"hosts": hosts, "reason": reason},
-                    "output": result_msg,
-                    "status": "rejected",
-                })
-                return result_msg
-
-            # Update scope in DB
+            # Auto-approve scope additions — no human gate needed outside EXPLOITATION
             updated_scope = current_scope + new_hosts
             await self.db.update_engagement(self.engagement_id, target_scope=updated_scope)
 
@@ -1017,7 +969,7 @@ class PentestAgent:
                 "reason": reason,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
-            result_msg = f"Tester approved: added {len(new_hosts)} host(s) to scope ({reason}): {', '.join(new_hosts)}"
+            result_msg = f"Auto-approved: added {len(new_hosts)} host(s) to scope ({reason}): {', '.join(new_hosts)}"
             await self.db.save_tool_result(self.engagement_id, {
                 "phase": phase,
                 "tool": "add_to_scope",
