@@ -90,7 +90,11 @@ function LogEntry({ event }) {
       icon = <Loader2 className="w-3.5 h-3.5 text-yellow-400 animate-spin" />;
       color = "text-yellow-400";
       label = `Running: ${event.tool}`;
-      detail = event.args ? JSON.stringify(event.args) : "";
+      detail = event.tool === "bash"
+        ? (event.parameters?.command ?? "")
+        : Object.entries(event.parameters ?? {})
+            .map(([k, v]) => `${k}=${typeof v === "string" || typeof v === "number" ? v : JSON.stringify(v)}`)
+            .join(" ");
       break;
     case "tool_output":
       color = "text-gray-400 font-mono";
@@ -100,7 +104,7 @@ function LogEntry({ event }) {
       icon = <CheckCircle className="w-3.5 h-3.5 text-green-400" />;
       color = "text-green-400";
       label = `Result: ${event.tool}`;
-      detail = typeof event.output === "string" ? event.output.slice(0, 300) : JSON.stringify(event.output || "").slice(0, 300);
+      detail = event.result?.output || event.result?.error || "";
       break;
     case "finding_recorded":
       icon = <AlertTriangle className="w-3.5 h-3.5 text-orange-400" />;
@@ -123,8 +127,18 @@ function LogEntry({ event }) {
       color = "text-red-400";
       label = `Error: ${event.message || event.error || ""}`;
       break;
+    case "chat_stream":
+      icon = null;
+      color = "text-gray-200";
+      label = event.content || "";
+      break;
+    case "auto_status":
+      color = "text-gray-400";
+      label = event.message || "";
+      break;
     default:
-      detail = JSON.stringify(event).slice(0, 200);
+      color = "text-gray-600";
+      label = event.type || "unknown";
   }
 
   return (
@@ -133,7 +147,10 @@ function LogEntry({ event }) {
       <span className="shrink-0 pt-0.5">{icon}</span>
       <div className="min-w-0">
         <span className={color}>{label}</span>
-        {detail && <span className="text-gray-500 ml-2 break-all">{detail}</span>}
+        {detail && (event.type === "tool_result"
+          ? <pre className="text-[10px] text-gray-500 bg-gray-800/50 rounded p-1 mt-1 overflow-x-auto max-h-48 whitespace-pre-wrap break-all">{detail}</pre>
+          : <span className="text-gray-500 ml-2 break-all">{detail}</span>
+        )}
       </div>
     </div>
   );
