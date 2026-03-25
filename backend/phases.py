@@ -81,9 +81,13 @@ PHASES: list[Phase] = [
     ),
     Phase(
         name="ANALYSIS",
-        objective="Correlate findings from previous phases and assess exploitability.",
+        objective=(
+            "Review all findings recorded during previous phases. "
+            "Assess exploitability and priority. Use record_finding to add or refine findings. "
+            "Do NOT use read_file — findings are in your conversation context and listed in your kickoff message."
+        ),
         tool_chains=[
-            ["read_file"],
+            ["record_finding"],
         ],
         completion_criteria=(
             "All findings correlated, false positives identified, and exploitability "

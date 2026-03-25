@@ -123,8 +123,14 @@ def _extract_target(tool_name: str, tool_input: dict) -> Optional[str]:
         ips = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2})?\b', command)
         if ips:
             return ips[0]
-        # Look for domain-like arguments (e.g. example.com)
+        # Look for domain-like arguments — but exclude filenames (e.g. subs.txt, state.json)
+        _FILE_EXTS = {
+            'txt', 'json', 'xml', 'yaml', 'yml', 'csv', 'log', 'conf', 'cfg',
+            'sh', 'py', 'rb', 'js', 'html', 'htm', 'php', 'zip', 'gz', 'tar',
+            'out', 'err', 'tmp', 'bak', 'md', 'ini', 'toml', 'nmap', 'lst',
+        }
         domains = re.findall(r'\b(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b', command)
+        domains = [d for d in domains if d.rsplit('.', 1)[-1].lower() not in _FILE_EXTS]
         if domains:
             return domains[0]
     return None
@@ -1330,16 +1336,37 @@ class PentestAgent:
                 "timestamp": self._ts(),
             })
         else:
-            conversation.append({
-                "role": "user",
-                "content": (
-                    f"Begin phase {phase.name}.\n\n"
-                    f"Objective: {phase.objective}\n"
-                    f"Target scope: {scope_str}\n\n"
-                    f"Execute the appropriate tools to achieve the objective. "
-                    f"When the objective is complete, say PHASE_COMPLETE."
-                ),
-            })
+            kickoff = (
+                f"Begin phase {phase.name}.\n\n"
+                f"Objective: {phase.objective}\n"
+                f"Target scope: {scope_str}\n\n"
+            )
+            # For ANALYSIS: inject all recorded findings so the agent has clear context
+            # without needing to read files (which don't exist on the toolbox filesystem).
+            if phase.name == "ANALYSIS":
+                findings = await self.db.get_findings(self.engagement_id)
+                if findings:
+                    findings_lines = "\n".join(
+                        f"- [{f['severity'].upper()}] {f['title']} (phase: {f['phase']})"
+                        for f in findings
+                    )
+                    kickoff += (
+                        f"Findings recorded so far:\n{findings_lines}\n\n"
+                        "Review and assess these findings. Use record_finding to add any "
+                        "additional findings or update severity assessments. "
+                        "Do NOT call read_file — all data is in your conversation context.\n\n"
+                    )
+                else:
+                    kickoff += (
+                        "No findings have been recorded yet. Review your conversation "
+                        "history from previous phases and record any vulnerabilities found. "
+                        "Do NOT call read_file.\n\n"
+                    )
+            kickoff += (
+                "Execute the appropriate tools to achieve the objective. "
+                "When the objective is complete, say PHASE_COMPLETE."
+            )
+            conversation.append({"role": "user", "content": kickoff})
 
         while self._running and step_count < phase.max_steps:
             step_count += 1
