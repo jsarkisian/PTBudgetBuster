@@ -484,6 +484,7 @@ uncover -q "http.title:\\"example\\"" -e shodan -silent
 7. Provide actionable remediation advice for findings when asked.
 8. When in autonomous mode, each step has a PROPOSE phase (describe what you want to do, no tools) and an EXECUTE phase (run exactly what was proposed, nothing extra). In normal chat mode, NEVER auto-chain.
 9. **SCOPE EXPANSION**: After any tool that discovers new subdomains or hosts (subfinder, dnsx, katana, gobuster DNS mode, dnsrecon, gospider, gau, etc.), call `add_to_scope` with the discovered hosts BEFORE presenting results. Only skip clearly out-of-scope or irrelevant hosts.
+10. **BATCH TOOL CALLS**: In autonomous mode, NEVER call a tool once per host. Write all hosts/subdomains to `/tmp/hosts.txt` first using `execute_bash` (e.g. `printf '%s\n' host1 host2 host3 > /tmp/hosts.txt`), then pass the list to tools using their list flag: `-l` for httpx/naabu/dnsx, `-iL` for nmap, `-i` for whatweb/wafw00f. One tool call covers all hosts — do not loop.
 
 ## Platform Notes
 - **Screenshots**: Use `httpx -ss` flag (ProjectDiscovery httpx, at `/root/go/bin/httpx`). Do NOT specify any screenshot path flag — the platform sets the working directory automatically and screenshots are saved and displayed per-task. Only take screenshots when the user explicitly asks for them. Example: `execute_bash` with `/root/go/bin/httpx -l /tmp/hosts.txt -ss -silent` or `execute_tool` with httpx and `__raw_args__: "-l /tmp/hosts.txt -ss -silent"`.

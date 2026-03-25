@@ -46,7 +46,14 @@ PHASES: list[Phase] = [
     ),
     Phase(
         name="ENUMERATION",
-        objective="Port scan, service fingerprinting, and directory discovery on live hosts.",
+        objective=(
+            "Port scan, service fingerprinting, and directory discovery on live hosts. "
+            "BATCHING REQUIRED: First write all discovered hosts to /tmp/hosts.txt using "
+            "execute_bash (printf or echo -e). Then run httpx, naabu, nmap, whatweb, and "
+            "wafw00f against the full list in one call each using their list flags "
+            "(-l for httpx/naabu/dnsx, -iL for nmap, -i for whatweb/wafw00f). "
+            "NEVER call a tool once per host — always batch via list file."
+        ),
         tool_chains=[
             ["naabu", "nmap"],
             ["httpx", "whatweb", "wafw00f"],
