@@ -19,6 +19,7 @@ import httpx
 from bedrock_client import BedrockClient
 from db import Database
 from phases import PhaseStateMachine
+from tool_failure_classifier import classify_failure, FailureType
 
 
 # ---------------------------------------------------------------------------
@@ -525,6 +526,9 @@ class PentestAgent:
         # In-memory scope approval queue (approval_id -> dict)
         self.pending_scope_approvals: dict[str, dict] = {}
 
+        # Per-run memory of syntax failures — resets each run, used for within-run injection
+        self._failed_this_run: dict[str, list[str]] = {}
+
     # ------------------------------------------------------------------
     # Credential tokenization / detokenization
     # ------------------------------------------------------------------
@@ -810,7 +814,22 @@ class PentestAgent:
                 error = result.get("error", "")
                 status = result.get("status", "unknown")
 
-                return f"Status: {status}\nOutput:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
+                base_result = f"Status: {status}\nOutput:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
+
+                inner_tool_name = tool_input["tool"]
+                classification = classify_failure(inner_tool_name, output, error, status)
+                if classification.failure_type == FailureType.SYNTAX_ERROR:
+                    lesson = classification.lesson
+                    self._failed_this_run.setdefault(inner_tool_name, []).append(lesson)
+                    await self.db.save_tool_lesson(
+                        self.engagement_id, inner_tool_name, lesson, error[:2000]
+                    )
+                    return (
+                        base_result
+                        + f"\n\n⚠️ SYNTAX ERROR: This command failed due to incorrect usage ({lesson}).\n"
+                        "Do not retry with these exact flags or syntax."
+                    )
+                return base_result
 
         elif tool_name == "execute_bash":
             async with httpx.AsyncClient(base_url=self.toolbox_url, timeout=600.0) as client:
@@ -853,7 +872,23 @@ class PentestAgent:
 
                 output = result.get("output", "")
                 error = result.get("error", "")
-                return f"Output:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
+                status = result.get("status", "unknown")
+
+                base_result = f"Output:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
+
+                classification = classify_failure("bash", output, error, status)
+                if classification.failure_type == FailureType.SYNTAX_ERROR:
+                    lesson = classification.lesson
+                    self._failed_this_run.setdefault("bash", []).append(lesson)
+                    await self.db.save_tool_lesson(
+                        self.engagement_id, "bash", lesson, error[:2000]
+                    )
+                    return (
+                        base_result
+                        + f"\n\n⚠️ SYNTAX ERROR: This command failed due to incorrect usage ({lesson}).\n"
+                        "Do not retry with these exact flags or syntax."
+                    )
+                return base_result
 
         elif tool_name == "record_finding":
             finding = await self.db.save_finding(self.engagement_id, {
@@ -1268,6 +1303,14 @@ class PentestAgent:
         phase_prompt_addition = phase_sm.get_phase_prompt(scope_str)
         system = SYSTEM_PROMPT + "\n\n" + phase_prompt_addition
 
+        # Inject cross-run tool lessons so agent avoids known bad patterns
+        db_lessons = await self.db.get_tool_lessons()
+        if db_lessons:
+            lessons_text = "\n".join(
+                f"- {r['tool_name']}: {r['lesson']}" for r in db_lessons
+            )
+            system += f"\n\n## Tool Usage Lessons (learned from past engagements)\n{lessons_text}"
+
         tools = self._get_tools_schema()
 
         # Resume from checkpoint if available, otherwise kick off fresh
@@ -1307,9 +1350,19 @@ class PentestAgent:
                 "timestamp": self._ts(),
             })
 
-            # Call Bedrock
+            # Call Bedrock — pass temp copy so failure summary doesn't pollute conversation
+            messages_to_send = conversation.copy()
+            if self._failed_this_run:
+                summary = (
+                    "⚠️ Do not retry these failed approaches from this session:\n"
+                    + "\n".join(
+                        f"- {tool}: {'; '.join(step_lessons)}"
+                        for tool, step_lessons in self._failed_this_run.items()
+                    )
+                )
+                messages_to_send.append({"role": "user", "content": summary})
             response = await asyncio.to_thread(
-                self.bedrock.invoke, conversation, system, tools, 4096,
+                self.bedrock.invoke, messages_to_send, system, tools, 4096,
             )
 
             content_blocks = response.get("content", [])

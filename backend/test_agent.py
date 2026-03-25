@@ -445,6 +445,7 @@ class TestRunPhaseResume(unittest.IsolatedAsyncioTestCase):
 
     def _make_agent(self):
         mock_db = MagicMock()
+        mock_db.get_tool_lessons = AsyncMock(return_value=[])
         mock_broadcast = AsyncMock()
         with patch("agent.BedrockClient"):
             agent = PentestAgent(
@@ -600,6 +601,112 @@ class TestRunPhaseResume(unittest.IsolatedAsyncioTestCase):
         assert saved_state["step_index"] == 1
         restored = _json.loads(saved_state["conversation_json"])
         assert len(restored) > 0
+
+
+class TestAgentFailureLearningInit(unittest.TestCase):
+    """Test that _failed_this_run is initialized correctly per-instance."""
+
+    def _make_agent(self):
+        mock_db = MagicMock()
+        mock_db.save_tool_lesson = AsyncMock()
+        mock_broadcast = AsyncMock()
+        with patch("agent.BedrockClient"):
+            agent = PentestAgent(
+                db=mock_db,
+                engagement_id="test-eng",
+                toolbox_url="http://toolbox:9500",
+                broadcast_fn=mock_broadcast,
+            )
+        return agent
+
+    def test_failed_this_run_initialized_empty(self):
+        """_failed_this_run starts empty on every new agent instance."""
+        agent = self._make_agent()
+        self.assertEqual(agent._failed_this_run, {})
+
+    def test_two_agents_have_independent_failed_this_run(self):
+        """Each agent instance has its own _failed_this_run dict."""
+        agent1 = self._make_agent()
+        agent2 = self._make_agent()
+        agent1._failed_this_run["nmap"] = ["flag '-sT' is invalid"]
+        self.assertEqual(agent2._failed_this_run, {})
+
+
+class TestAgentFailureLearningWiring(unittest.IsolatedAsyncioTestCase):
+    """Test that _execute_tool_call annotates, updates _failed_this_run, and saves on SYNTAX_ERROR."""
+
+    def _make_agent(self):
+        mock_db = MagicMock()
+        mock_db.save_tool_lesson = AsyncMock()
+        mock_db.save_tool_result = AsyncMock()
+        mock_broadcast = AsyncMock()
+        with patch("agent.BedrockClient"):
+            agent = PentestAgent(
+                db=mock_db,
+                engagement_id="test-eng",
+                toolbox_url="http://toolbox:9500",
+                broadcast_fn=mock_broadcast,
+            )
+        return agent
+
+    def _mock_toolbox_session(self, mock_cls, response_payload):
+        """Wire mock_cls (patched httpx.AsyncClient) to return response_payload from .json()."""
+        mock_resp = MagicMock()
+        mock_resp.json = MagicMock(return_value=response_payload)
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_cls.return_value = mock_client
+
+    async def test_syntax_error_annotates_result(self):
+        """On SYNTAX_ERROR, the return string contains the warning block."""
+        agent = self._make_agent()
+        payload = {"status": "error", "output": "", "error": "nmap: flag provided but not defined: -badopt"}
+        with patch("agent.httpx.AsyncClient") as mock_cls:
+            self._mock_toolbox_session(mock_cls, payload)
+            result = await agent._execute_tool_call(
+                "execute_tool", {"tool": "nmap", "parameters": {"__raw_args__": "-badopt"}}, target_scope=[]
+            )
+        self.assertIn("⚠️ SYNTAX ERROR", result)
+        self.assertIn("-badopt", result)
+
+    async def test_syntax_error_updates_failed_this_run(self):
+        """On SYNTAX_ERROR, the lesson is appended to _failed_this_run[tool_name]."""
+        agent = self._make_agent()
+        payload = {"status": "error", "output": "", "error": "nmap: flag provided but not defined: -badopt"}
+        with patch("agent.httpx.AsyncClient") as mock_cls:
+            self._mock_toolbox_session(mock_cls, payload)
+            await agent._execute_tool_call(
+                "execute_tool", {"tool": "nmap", "parameters": {"__raw_args__": "-badopt"}}, target_scope=[]
+            )
+        self.assertIn("nmap", agent._failed_this_run)
+        self.assertGreater(len(agent._failed_this_run["nmap"]), 0)
+
+    async def test_syntax_error_saves_lesson_to_db(self):
+        """On SYNTAX_ERROR, db.save_tool_lesson is called with tool_name and lesson."""
+        agent = self._make_agent()
+        payload = {"status": "error", "output": "", "error": "nmap: flag provided but not defined: -badopt"}
+        with patch("agent.httpx.AsyncClient") as mock_cls:
+            self._mock_toolbox_session(mock_cls, payload)
+            await agent._execute_tool_call(
+                "execute_tool", {"tool": "nmap", "parameters": {"__raw_args__": "-badopt"}}, target_scope=[]
+            )
+        agent.db.save_tool_lesson.assert_called_once()
+        call_args = agent.db.save_tool_lesson.call_args
+        self.assertEqual(call_args[0][1], "nmap")  # tool_name is second positional arg
+
+    async def test_success_no_annotation_no_db_save(self):
+        """On success, no warning block is appended and db.save_tool_lesson is not called."""
+        agent = self._make_agent()
+        payload = {"status": "success", "output": "80/tcp open http", "error": ""}
+        with patch("agent.httpx.AsyncClient") as mock_cls:
+            self._mock_toolbox_session(mock_cls, payload)
+            result = await agent._execute_tool_call(
+                "execute_tool", {"tool": "nmap", "parameters": {"__raw_args__": "-p 80"}}, target_scope=[]
+            )
+        self.assertNotIn("⚠️ SYNTAX ERROR", result)
+        agent.db.save_tool_lesson.assert_not_called()
 
 
 if __name__ == "__main__":
