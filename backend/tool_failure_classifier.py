@@ -25,7 +25,6 @@ _SYNTAX_PATTERNS = [
     "invalid option",
     "unknown flag",
     "unrecognized flag",
-    "unrecognized",
     "usage:",
     "command not found",
     "invalid argument",
@@ -93,6 +92,10 @@ def classify_failure(
         FailureClassification with failure_type and lesson.
         lesson is only meaningful when failure_type == SYNTAX_ERROR.
     """
+    # Guard: if status is not "error", the tool succeeded and produced no failure
+    if status != "error":
+        return FailureClassification(failure_type=FailureType.NONE, lesson="")
+
     combined = (error + " " + output).lower()
 
     # Check auth patterns first (higher priority — a 401 in output from a syntax test

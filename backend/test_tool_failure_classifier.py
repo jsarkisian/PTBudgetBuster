@@ -20,7 +20,7 @@ class TestClassifyFailureSyntaxErrors(unittest.TestCase):
         self.assertIn("--bad-flag", result.lesson)
 
     def test_unrecognized_in_output(self):
-        result = classify_failure("nmap", "unrecognized option --foo", "", "error")
+        result = classify_failure("nmap", "unrecognized flag: --foo", "", "error")
         self.assertEqual(result.failure_type, FailureType.SYNTAX_ERROR)
 
     def test_command_not_found(self):
@@ -71,6 +71,11 @@ class TestClassifyFailureNone(unittest.TestCase):
         result = classify_failure("nmap", "80/tcp open http", "", "success")
         self.assertEqual(result.failure_type, FailureType.NONE)
 
+    def test_success_with_trigger_pattern_in_output(self):
+        """A successful result is NONE even if output contains a syntax trigger word."""
+        result = classify_failure("nmap", "usage: basic web service", "", "success")
+        self.assertEqual(result.failure_type, FailureType.NONE)
+
     def test_no_results(self):
         result = classify_failure("subfinder", "", "", "success")
         self.assertEqual(result.failure_type, FailureType.NONE)
@@ -99,9 +104,10 @@ class TestLessonExtraction(unittest.TestCase):
         self.assertTrue(result.lesson.startswith("bash error: "))
 
     def test_bash_lesson_truncated_at_100(self):
-        long_error = "x" * 200
+        long_error = "command not found: " + "x" * 200
         result = classify_failure("bash", "", long_error, "error")
-        # "bash error: " prefix (12 chars) + 100 chars of error = 112
+        self.assertEqual(result.failure_type, FailureType.SYNTAX_ERROR)
+        # "bash error: " (12 chars) + 100 chars = 112 chars total
         self.assertLessEqual(len(result.lesson), 115)
 
     def test_fallback_lesson_uses_error(self):
