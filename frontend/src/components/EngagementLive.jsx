@@ -215,6 +215,7 @@ export default function EngagementLive({ engagementId, navigate }) {
   const [events, setEvents] = useState([]);
   const [findings, setFindings] = useState([]);
   const [currentPhase, setCurrentPhase] = useState(null);
+  const currentPhaseRef = useRef(null);
   const [completedPhases, setCompletedPhases] = useState([]);
   const [phaseObjective, setPhaseObjective] = useState("");
   const [awaitingApproval, setAwaitingApproval] = useState(false);
@@ -225,12 +226,22 @@ export default function EngagementLive({ engagementId, navigate }) {
   const logRef = useRef(null);
   const wsRef = useRef(null);
 
+  // Keep ref in sync so WebSocket closure always sees latest phase
+  useEffect(() => {
+    currentPhaseRef.current = currentPhase;
+  }, [currentPhase]);
+
   // Fetch initial engagement data
   useEffect(() => {
     getEngagement(engagementId)
       .then((eng) => {
         setEngagement(eng);
-        if (eng.current_phase) setCurrentPhase(eng.current_phase);
+        if (eng.current_phase) {
+          setCurrentPhase(eng.current_phase);
+          // Mark all phases before current as completed on initial load
+          const idx = PHASES.findIndex((p) => p.id === eng.current_phase);
+          if (idx > 0) setCompletedPhases(PHASES.slice(0, idx).map((p) => p.id));
+        }
         if (eng.status === "awaiting_approval") setAwaitingApproval(true);
         if (eng.status === "completed") setCompleted(true);
       })
@@ -244,9 +255,9 @@ export default function EngagementLive({ engagementId, navigate }) {
 
       switch (event.type) {
         case "phase_changed":
-          if (currentPhase) {
+          if (currentPhaseRef.current) {
             setCompletedPhases((prev) =>
-              prev.includes(currentPhase) ? prev : [...prev, currentPhase]
+              prev.includes(currentPhaseRef.current) ? prev : [...prev, currentPhaseRef.current]
             );
           }
           setCurrentPhase(event.phase);
