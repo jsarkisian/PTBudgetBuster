@@ -52,8 +52,12 @@ _REDACT_PATTERNS = [
 ]
 
 
+_ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[^[]')
+
+
 def _redact_output(text: str) -> str:
-    """Redact sensitive patterns from tool output before sending to Claude."""
+    """Strip ANSI escape codes and redact sensitive patterns from tool output."""
+    text = _ANSI_ESCAPE.sub('', text)
     for pattern, replacement in _REDACT_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
