@@ -415,7 +415,10 @@ async def _start_engagement(engagement_id: str):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
         finally:
-            active_agents.pop(engagement_id, None)
+            # Keep agent alive if waiting for exploitation approval
+            eng = await db.get_engagement(engagement_id)
+            if not eng or eng.get("status") != "awaiting_approval":
+                active_agents.pop(engagement_id, None)
             _agent_tasks.pop(engagement_id, None)
 
     task = asyncio.create_task(_run_and_cleanup())
@@ -472,16 +475,40 @@ async def approve_exploitation(
     req: ApproveExploitationRequest,
     user=Depends(get_current_user),
 ):
+    engagement = await db.get_engagement(engagement_id)
+    if not engagement:
+        raise HTTPException(404, "Engagement not found")
+
+    # If agent was evicted (e.g. server restart), recreate it
     agent = active_agents.get(engagement_id)
     if not agent:
-        raise HTTPException(404, "No running agent for this engagement")
+        if engagement.get("status") != "awaiting_approval":
+            raise HTTPException(409, "Engagement is not awaiting exploitation approval")
+        from agent import PentestAgent
+        from bedrock_client import BedrockClient
+        agent = PentestAgent(
+            engagement_id=engagement_id,
+            db=db,
+            broadcast=lambda msg: broadcast(engagement_id, msg),
+            bedrock=BedrockClient(
+                region=settings.aws_region,
+                model_id=settings.bedrock_model_id,
+            ),
+        )
+        active_agents[engagement_id] = agent
 
     # Mark approved findings in database
     for fid in req.finding_ids:
         await db.update_finding(fid, exploitation_approved=True)
 
-    # Resume agent exploitation phase
-    await agent.resume_exploitation(req.finding_ids)
+    # Resume agent exploitation phase in background, clean up when done
+    async def _run_exploitation():
+        try:
+            await agent.resume_exploitation(req.finding_ids)
+        finally:
+            active_agents.pop(engagement_id, None)
+
+    asyncio.create_task(_run_exploitation())
 
     await broadcast(engagement_id, {
         "type": "exploitation_approved",
