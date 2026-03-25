@@ -10,6 +10,7 @@ Tests the parts that do NOT require AWS/Bedrock calls:
 """
 
 import unittest
+import json as _json
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from agent import (
@@ -437,9 +438,6 @@ class TestSystemPrompt(unittest.TestCase):
 # ===========================================================================
 # _run_phase resume continuity tests
 # ===========================================================================
-
-import asyncio
-import json as _json
 
 
 class TestRunPhaseResume(unittest.IsolatedAsyncioTestCase):
