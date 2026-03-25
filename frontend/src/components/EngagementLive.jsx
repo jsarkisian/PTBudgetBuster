@@ -428,6 +428,12 @@ export default function EngagementLive({ engagementId, navigate }) {
             {events.map((ev, i) => (
               <LogEntry key={i} event={ev} />
             ))}
+            {engagement?.status === "running" && (
+              <div className="flex items-center gap-2 py-1 px-2 text-xs text-yellow-500 border-t border-gray-800/50">
+                <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                <span>Scan running — waiting for tool to complete...</span>
+              </div>
+            )}
           </div>
 
           {/* Message input */}

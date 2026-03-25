@@ -243,6 +243,25 @@ class Database:
 
     # -- Tool Results ----------------------------------------------
 
+    async def save_tool_start(self, engagement_id: str, phase: str, tool: str, input: dict) -> int:
+        """Insert a running row when a tool starts. Returns the row id for later update."""
+        now = _now()
+        cursor = await self._db.execute(
+            """INSERT INTO tool_results (engagement_id, phase, tool, input, output, status, created_at)
+               VALUES (?, ?, ?, ?, '', 'running', ?)""",
+            (engagement_id, phase, tool, json.dumps(input), now),
+        )
+        await self._db.commit()
+        return cursor.lastrowid
+
+    async def update_tool_result(self, row_id: int, output: str, status: str):
+        """Update a running row with final output and status."""
+        await self._db.execute(
+            "UPDATE tool_results SET output = ?, status = ? WHERE id = ?",
+            (output, status, row_id),
+        )
+        await self._db.commit()
+
     async def save_tool_result(self, engagement_id: str, result: dict):
         now = _now()
         await self._db.execute(

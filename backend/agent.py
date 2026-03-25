@@ -792,6 +792,11 @@ class PentestAgent:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
 
+                # Save running row so refresh shows tool as in-progress
+                row_id = await self.db.save_tool_start(
+                    self.engagement_id, phase, tool_input["tool"], tool_input["parameters"]
+                )
+
                 resp = await client.post("/execute/sync", json={
                     "tool": tool_input["tool"],
                     "parameters": tool_input["parameters"],
@@ -802,15 +807,10 @@ class PentestAgent:
 
                 output = _redact_output(result.get("output", ""))
                 error = _redact_output(result.get("error", ""))
+                status = result.get("status", "unknown")
 
-                # Persist tool result to DB
-                await self.db.save_tool_result(self.engagement_id, {
-                    "phase": phase,
-                    "tool": tool_input["tool"],
-                    "input": tool_input["parameters"],
-                    "output": output[:10000],
-                    "status": result.get("status", "unknown"),
-                })
+                # Update the running row with final output
+                await self.db.update_tool_result(row_id, output[:10000], status)
 
                 await self.broadcast({
                     "type": "tool_result",
@@ -825,7 +825,6 @@ class PentestAgent:
                     "source": "ai_agent",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-                status = result.get("status", "unknown")
 
                 base_result = f"Status: {status}\nOutput:\n{output}\n{f'Errors: {error}' if error else ''}"
 
@@ -857,6 +856,11 @@ class PentestAgent:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
 
+                # Save running row so refresh shows tool as in-progress
+                row_id = await self.db.save_tool_start(
+                    self.engagement_id, phase, "bash", {"command": tool_input["command"]}
+                )
+
                 resp = await client.post("/execute/sync", json={
                     "tool": "bash",
                     "parameters": {"command": tool_input["command"]},
@@ -867,15 +871,10 @@ class PentestAgent:
 
                 output = _redact_output(result.get("output", ""))
                 error = _redact_output(result.get("error", ""))
+                status = result.get("status", "unknown")
 
-                # Persist tool result to DB
-                await self.db.save_tool_result(self.engagement_id, {
-                    "phase": phase,
-                    "tool": "bash",
-                    "input": {"command": tool_input["command"]},
-                    "output": output[:10000],
-                    "status": result.get("status", "unknown"),
-                })
+                # Update the running row with final output
+                await self.db.update_tool_result(row_id, output[:10000], status)
 
                 await self.broadcast({
                     "type": "tool_result",
@@ -885,7 +884,6 @@ class PentestAgent:
                     "source": "ai_agent",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-                status = result.get("status", "unknown")
 
                 base_result = f"Output:\n{output}\n{f'Errors: {error}' if error else ''}"
 

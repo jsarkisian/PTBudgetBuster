@@ -565,24 +565,32 @@ async def list_events(engagement_id: str, user=Depends(get_current_user)):
                 "objective": "",
                 "timestamp": r["created_at"],
             })
-        # Show what the tool was called with
         inp = r["input"] or {}
-        events.append({
-            "type": "tool_start",
-            "tool": r["tool"],
-            "parameters": inp,
-            "timestamp": r["created_at"],
-        })
-        # Only include the result if there's something to show
         output = r["output"] or ""
-        if output.strip():
+        if r["status"] == "running":
+            # Tool started but hasn't finished — show as in-progress
             events.append({
-                "type": "tool_result",
+                "type": "tool_start",
                 "tool": r["tool"],
-                "result": {"output": output, "status": r["status"]},
-                "phase": r["phase"],
+                "parameters": inp,
                 "timestamp": r["created_at"],
             })
+        else:
+            # Completed — show what was called and the result (if any output)
+            events.append({
+                "type": "tool_start",
+                "tool": r["tool"],
+                "parameters": inp,
+                "timestamp": r["created_at"],
+            })
+            if output.strip():
+                events.append({
+                    "type": "tool_result",
+                    "tool": r["tool"],
+                    "result": {"output": output, "status": r["status"]},
+                    "phase": r["phase"],
+                    "timestamp": r["created_at"],
+                })
     return events
 
 
