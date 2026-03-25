@@ -800,12 +800,15 @@ class PentestAgent:
                 })
                 result = resp.json()
 
+                output = _redact_output(result.get("output", ""))
+                error = _redact_output(result.get("error", ""))
+
                 # Persist tool result to DB
                 await self.db.save_tool_result(self.engagement_id, {
                     "phase": phase,
                     "tool": tool_input["tool"],
                     "input": tool_input["parameters"],
-                    "output": result.get("output", "")[:10000],
+                    "output": output[:10000],
                     "status": result.get("status", "unknown"),
                 })
 
@@ -815,17 +818,16 @@ class PentestAgent:
                     "tool": tool_input["tool"],
                     "result": {
                         **result,
+                        "output": output,
+                        "error": error,
                         "parameters": tool_input.get("parameters", {}),
                     },
                     "source": "ai_agent",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-
-                output = result.get("output", "")
-                error = result.get("error", "")
                 status = result.get("status", "unknown")
 
-                base_result = f"Status: {status}\nOutput:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
+                base_result = f"Status: {status}\nOutput:\n{output}\n{f'Errors: {error}' if error else ''}"
 
                 inner_tool_name = tool_input["tool"]
                 classification = classify_failure(inner_tool_name, output, error, status)
@@ -863,12 +865,15 @@ class PentestAgent:
                 })
                 result = resp.json()
 
+                output = _redact_output(result.get("output", ""))
+                error = _redact_output(result.get("error", ""))
+
                 # Persist tool result to DB
                 await self.db.save_tool_result(self.engagement_id, {
                     "phase": phase,
                     "tool": "bash",
                     "input": {"command": tool_input["command"]},
-                    "output": result.get("output", "")[:10000],
+                    "output": output[:10000],
                     "status": result.get("status", "unknown"),
                 })
 
@@ -876,16 +881,13 @@ class PentestAgent:
                     "type": "tool_result",
                     "task_id": task_id,
                     "tool": "bash",
-                    "result": result,
+                    "result": {**result, "output": output, "error": error},
                     "source": "ai_agent",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
-
-                output = result.get("output", "")
-                error = result.get("error", "")
                 status = result.get("status", "unknown")
 
-                base_result = f"Output:\n{_redact_output(output)}\n{f'Errors: {_redact_output(error)}' if error else ''}"
+                base_result = f"Output:\n{output}\n{f'Errors: {error}' if error else ''}"
 
                 classification = classify_failure("bash", output, error, status)
                 if classification.failure_type == FailureType.SYNTAX_ERROR:
