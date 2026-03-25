@@ -73,8 +73,6 @@ PHASES: list[Phase] = [
         objective="Scan for known vulnerabilities across discovered services and web applications.",
         tool_chains=[
             ["nuclei"],
-            ["nikto"],
-            ["sslscan", "testssl"],
             ["wpscan"],
         ],
         completion_criteria=(
