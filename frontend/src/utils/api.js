@@ -62,5 +62,55 @@ export const updateUser = (username, data) =>
 export const deleteUser = (username) =>
   request(`/api/users/${username}`, { method: "DELETE" });
 
+// -- Firm Knowledge (admin) --------------------------------------------------
+
+export const getFirmKnowledgeStatus = () => request("/api/admin/firm-knowledge/status");
+export const getFirmFindings = () => request("/api/admin/firm-knowledge/findings");
+export const clearFirmFindings = () => request("/api/admin/firm-knowledge/findings", { method: "DELETE" });
+
+export const uploadFirmFindings = async (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  const token = localStorage.getItem("token");
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetch(`${API_BASE}/api/admin/firm-knowledge/findings`, {
+    method: "POST", headers, body: form,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || body.error || "Upload failed");
+  }
+  return res.json();
+};
+
+export const getMethodology = () => request("/api/admin/firm-knowledge/methodology");
+export const saveMethodology = (text) =>
+  request("/api/admin/firm-knowledge/methodology", { method: "POST", body: JSON.stringify({ text }) });
+export const clearMethodology = () => request("/api/admin/firm-knowledge/methodology", { method: "DELETE" });
+
+export const getReportTemplate = () => request("/api/admin/firm-knowledge/report-template");
+export const clearReportTemplate = () =>
+  request("/api/admin/firm-knowledge/report-template", { method: "DELETE" });
+
+export const uploadReportTemplate = async (file) => {
+  const form = new FormData();
+  form.append("file", file);
+  const token = localStorage.getItem("token");
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetch(`${API_BASE}/api/admin/firm-knowledge/report-template`, {
+    method: "POST", headers, body: form,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || body.error || "Upload failed");
+  }
+  return res.json();
+};
+
+export const submitFindingFeedback = (engagementId, findingId, payload) =>
+  request(`/api/engagements/${engagementId}/findings/${findingId}/feedback`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+
 // Health
 export const getHealth = () => request("/api/health");
