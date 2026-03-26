@@ -18,6 +18,7 @@ import httpx
 
 from bedrock_client import BedrockClient
 from db import Database
+from firm_knowledge import build_knowledge_block
 from phases import PhaseStateMachine
 from tool_failure_classifier import classify_failure, FailureType
 
@@ -1307,9 +1308,22 @@ class PentestAgent:
                 f"Objective: {phase.objective}\n"
                 f"Target scope: {scope_str}\n\n"
             )
-            # For ANALYSIS: inject all recorded findings so the agent has clear context
-            # without needing to read files (which don't exist on the toolbox filesystem).
+            # For ANALYSIS: inject firm knowledge + recorded findings
             if phase.name == "ANALYSIS":
+                # Build firm knowledge block from DB
+                firm_findings = await self.db.get_firm_findings()
+                methodology = await self.db.get_config("firm_methodology") or ""
+                report_template = await self.db.get_config("firm_report_template") or ""
+                feedback = await self.db.get_firm_feedback(limit=30)
+                knowledge_block = build_knowledge_block(
+                    findings=firm_findings,
+                    methodology=methodology,
+                    report_template=report_template,
+                    feedback=feedback,
+                )
+                if knowledge_block:
+                    kickoff += knowledge_block + "\n\n"
+
                 findings = await self.db.get_findings(self.engagement_id)
                 if findings:
                     findings_lines = "\n".join(
