@@ -24,6 +24,8 @@ from fastapi import (
     Depends,
     Request,
     Query,
+    UploadFile,
+    File,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -33,9 +35,14 @@ from pydantic_settings import BaseSettings
 from jose import jwt, JWTError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+import io as _io
+
+from docx import Document as DocxDocument
+
 from db import Database
 from agent import PentestAgent
 from user_manager import UserManager
+from firm_knowledge import validate_csv, build_knowledge_block
 
 
 # ──────────────────────────────────────────────
@@ -277,6 +284,17 @@ class UpdateUserRequest(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
     enabled: Optional[bool] = None
+
+
+class MethodologyRequest(BaseModel):
+    text: str = ""
+
+
+class FindingFeedbackRequest(BaseModel):
+    action: str
+    rejection_reason: str = ""
+    reworded_title: str = ""
+    reworded_description: str = ""
 
 
 # ──────────────────────────────────────────────
@@ -712,6 +730,166 @@ async def delete_user(username: str, admin=Depends(require_admin)):
     if not await user_mgr.delete_user(username):
         raise HTTPException(404, "User not found")
     return {"status": "deleted"}
+
+
+# ──────────────────────────────────────────────
+#  Firm Knowledge Base (admin only)
+# ──────────────────────────────────────────────
+
+@app.post("/api/admin/firm-knowledge/findings")
+async def upload_firm_findings(file: UploadFile = File(...), admin=Depends(require_admin)):
+    """Upload CSV to replace the firm finding library. Validates before writing."""
+    data = await file.read()
+    rows, error = validate_csv(data)
+    if error:
+        raise HTTPException(400, error)
+    await db.replace_firm_findings(rows)
+    return {"imported": len(rows)}
+
+
+@app.delete("/api/admin/firm-knowledge/findings")
+async def clear_firm_findings(admin=Depends(require_admin)):
+    await db.clear_firm_findings()
+    return {"ok": True}
+
+
+@app.get("/api/admin/firm-knowledge/findings")
+async def list_firm_findings(admin=Depends(require_admin)):
+    return await db.get_firm_findings()
+
+
+@app.post("/api/admin/firm-knowledge/report-template")
+async def upload_report_template(file: UploadFile = File(...), admin=Depends(require_admin)):
+    """Upload .docx, extract plain text, store in config."""
+    data = await file.read()
+    try:
+        doc = DocxDocument(_io.BytesIO(data))
+        text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    except Exception as e:
+        raise HTTPException(400, f"Failed to parse .docx: {e}")
+    word_count = len(text.split())
+    await db.set_config("firm_report_template", text)
+    await db.set_config("firm_report_template_filename", file.filename)
+    await db.set_config("firm_report_template_updated_at", datetime.now(timezone.utc).isoformat())
+    return {"word_count": word_count, "filename": file.filename}
+
+
+@app.delete("/api/admin/firm-knowledge/report-template")
+async def clear_report_template(admin=Depends(require_admin)):
+    await db.set_config("firm_report_template", "")
+    await db.set_config("firm_report_template_filename", "")
+    await db.set_config("firm_report_template_updated_at", "")
+    return {"ok": True}
+
+
+@app.get("/api/admin/firm-knowledge/report-template")
+async def get_report_template(admin=Depends(require_admin)):
+    text = await db.get_config("firm_report_template") or ""
+    return {"text": text}
+
+
+@app.post("/api/admin/firm-knowledge/methodology")
+async def save_methodology(req: MethodologyRequest, admin=Depends(require_admin)):
+    text = req.text
+    await db.set_config("firm_methodology", text)
+    await db.set_config("firm_methodology_updated_at", datetime.now(timezone.utc).isoformat())
+    return {"ok": True, "char_count": len(text)}
+
+
+@app.delete("/api/admin/firm-knowledge/methodology")
+async def clear_methodology(admin=Depends(require_admin)):
+    await db.set_config("firm_methodology", "")
+    await db.set_config("firm_methodology_updated_at", "")
+    return {"ok": True}
+
+
+@app.get("/api/admin/firm-knowledge/methodology")
+async def get_methodology(admin=Depends(require_admin)):
+    text = await db.get_config("firm_methodology") or ""
+    return {"text": text}
+
+
+@app.get("/api/admin/firm-knowledge/status")
+async def get_firm_knowledge_status(admin=Depends(require_admin)):
+    findings_status = await db.get_firm_findings_status()
+    methodology = await db.get_config("firm_methodology") or ""
+    methodology_updated_at = await db.get_config("firm_methodology_updated_at")
+    report_template = await db.get_config("firm_report_template") or ""
+    report_filename = await db.get_config("firm_report_template_filename") or ""
+    report_updated_at = await db.get_config("firm_report_template_updated_at")
+    feedback_count = await db.get_firm_feedback_count()
+    return {
+        "findings": {
+            "count": findings_status["count"],
+            "updated_at": findings_status["updated_at"],
+        },
+        "report_template": {
+            "configured": bool(report_template),
+            "filename": report_filename or None,
+            "word_count": len(report_template.split()) if report_template else 0,
+            "updated_at": report_updated_at,
+        },
+        "methodology": {
+            "configured": bool(methodology),
+            "char_count": len(methodology),
+            "updated_at": methodology_updated_at,
+        },
+        "feedback": {
+            "count": feedback_count,
+        },
+    }
+
+
+# ──────────────────────────────────────────────
+#  Finding Feedback (operator-facing)
+# ──────────────────────────────────────────────
+
+@app.post("/api/engagements/{engagement_id}/findings/{finding_id}/feedback")
+async def submit_finding_feedback(
+    engagement_id: str,
+    finding_id: str,
+    req: FindingFeedbackRequest,
+    user=Depends(get_current_user),
+):
+    """Accept, reject, or reword a finding. Reword also updates the finding in place."""
+    # Finding IDs are strings in the DB (uuid4[:8]); compare as strings
+    findings = await db.get_findings(engagement_id)
+    finding = next((f for f in findings if f["id"] == finding_id), None)
+    if not finding:
+        raise HTTPException(404, "Finding not found")
+
+    action = req.action
+    if action not in ("accepted", "rejected", "reworded"):
+        raise HTTPException(400, "action must be accepted, rejected, or reworded")
+
+    rejection_reason = req.rejection_reason
+    reworded_title = req.reworded_title
+    reworded_description = req.reworded_description
+
+    if action == "rejected" and not rejection_reason.strip():
+        raise HTTPException(400, "rejection_reason is required for action=rejected")
+    if action == "reworded" and not reworded_title.strip():
+        raise HTTPException(400, "reworded_title is required for action=reworded")
+
+    # Use CURRENT finding title as stable key (pre-reword)
+    original_title = finding["title"]
+
+    await db.save_firm_feedback(
+        finding_title=original_title,
+        action=action,
+        rejection_reason=rejection_reason,
+        reworded_title=reworded_title,
+        reworded_description=reworded_description,
+    )
+
+    if action == "reworded":
+        await db.update_finding(
+            finding_id,
+            title=reworded_title,
+            description=reworded_description if reworded_description.strip() else finding["description"],
+        )
+
+    return {"ok": True}
 
 
 # ──────────────────────────────────────────────
