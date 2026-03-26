@@ -89,6 +89,10 @@ PHASES: list[Phase] = [
         objective=(
             "Review all findings recorded during previous phases. "
             "Assess exploitability and priority. Use record_finding to add or refine findings. "
+            "For any finding that is exploitable (medium/high/critical), populate the exploit_plan field "
+            "with the specific tool and command you will run — e.g. 'sqlmap -u https://target/page?id=1 --dbs' "
+            "or 'hydra -l admin -P /wordlist https://target/login'. Be precise: include the target URL/host, "
+            "tool flags, and expected outcome. This is shown to the operator before they approve exploitation. "
             "Do NOT use read_file — findings are in your conversation context and listed in your kickoff message."
         ),
         tool_chains=[

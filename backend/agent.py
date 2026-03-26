@@ -704,11 +704,15 @@ class PentestAgent:
                         },
                         "description": {
                             "type": "string",
-                            "description": "Detailed description including impact and remediation",
+                            "description": "Detailed description of the vulnerability, its impact, and remediation. Keep concise — 2-4 sentences.",
                         },
                         "evidence": {
                             "type": "string",
-                            "description": "Tool output or proof supporting the finding",
+                            "description": "Key tool output proving the finding exists. Keep to the most relevant 2-3 lines.",
+                        },
+                        "exploit_plan": {
+                            "type": "string",
+                            "description": "For exploitable findings: exactly what tool or technique will be used to demonstrate impact (e.g. 'sqlmap -u https://... --dbs', 'hydra brute-force on admin login at ...'). Leave empty for info/low findings that don't warrant exploitation.",
                         },
                     },
                     "required": ["severity", "title", "description"],
@@ -907,6 +911,7 @@ class PentestAgent:
                 "title": tool_input["title"],
                 "description": tool_input.get("description", ""),
                 "evidence": tool_input.get("evidence", ""),
+                "exploit_plan": tool_input.get("exploit_plan", ""),
                 "phase": phase,
             })
 

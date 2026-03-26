@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS findings (
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     evidence TEXT DEFAULT '',
+    exploit_plan TEXT DEFAULT '',
     phase TEXT DEFAULT '',
     exploitation_approved INTEGER,
     created_at TEXT NOT NULL
@@ -109,7 +110,12 @@ class Database:
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute("PRAGMA foreign_keys=ON")
         await self._db.executescript(SCHEMA)
-        await self._db.commit()
+        # Migrate: add exploit_plan column if it doesn't exist yet
+        try:
+            await self._db.execute("ALTER TABLE findings ADD COLUMN exploit_plan TEXT DEFAULT ''")
+            await self._db.commit()
+        except Exception:
+            pass  # Column already exists
 
     async def close(self):
         if self._db:
@@ -294,15 +300,16 @@ class Database:
         fid = str(uuid.uuid4())[:8]
         now = _now()
         await self._db.execute(
-            """INSERT INTO findings (id, engagement_id, severity, title, description, evidence, phase, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO findings (id, engagement_id, severity, title, description, evidence, exploit_plan, phase, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (fid, engagement_id, finding["severity"], finding["title"],
              finding.get("description", ""), finding.get("evidence", ""),
-             finding.get("phase", ""), now),
+             finding.get("exploit_plan", ""), finding.get("phase", ""), now),
         )
         await self._db.commit()
         return {"id": fid, "severity": finding["severity"], "title": finding["title"],
                 "description": finding.get("description", ""), "evidence": finding.get("evidence", ""),
+                "exploit_plan": finding.get("exploit_plan", ""),
                 "phase": finding.get("phase", ""), "exploitation_approved": None, "created_at": now}
 
     async def get_findings(self, engagement_id: str) -> list[dict]:
@@ -313,6 +320,7 @@ class Database:
             return [{
                 "id": r["id"], "severity": r["severity"], "title": r["title"],
                 "description": r["description"], "evidence": r["evidence"],
+                "exploit_plan": r["exploit_plan"] if "exploit_plan" in r.keys() else "",
                 "phase": r["phase"],
                 "exploitation_approved": bool(r["exploitation_approved"]) if r["exploitation_approved"] is not None else None,
                 "created_at": r["created_at"],
