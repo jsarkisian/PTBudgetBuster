@@ -493,7 +493,11 @@ async def approve_exploitation(
     # If agent was evicted (e.g. server restart), recreate it
     agent = active_agents.get(engagement_id)
     if not agent:
-        if engagement.get("status") != "awaiting_approval":
+        exploitable = (
+            engagement.get("status") in ("awaiting_approval", "paused", "stopped")
+            and engagement.get("current_phase") == "EXPLOITATION"
+        )
+        if not exploitable:
             raise HTTPException(409, "Engagement is not awaiting exploitation approval")
         from agent import PentestAgent
         from bedrock_client import BedrockClient

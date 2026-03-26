@@ -1160,7 +1160,11 @@ class PentestAgent:
                 pass
 
         self._running = False
-        await self.db.update_engagement(self.engagement_id, status="paused")
+        # Don't overwrite awaiting_approval — that state must persist so the
+        # frontend shows the approval banner and the approve endpoint accepts it
+        eng = await self.db.get_engagement(self.engagement_id)
+        if eng and eng.get("status") != "awaiting_approval":
+            await self.db.update_engagement(self.engagement_id, status="paused")
         await self.broadcast({
             "type": "auto_mode_changed",
             "enabled": False,
