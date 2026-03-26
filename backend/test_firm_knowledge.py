@@ -60,6 +60,11 @@ class TestValidateCsv:
         assert error is None
         assert rows[0]["description"] == ""
 
+    def test_non_utf8_input_returns_error(self):
+        rows, error = validate_csv(b"\xff\xfe invalid utf8 bytes")
+        assert rows is None
+        assert error is not None
+
 
 class TestBuildKnowledgeBlock:
     def test_empty_inputs_returns_none(self):
@@ -121,3 +126,10 @@ class TestBuildKnowledgeBlock:
         assert "METHODOLOGY" not in result
         assert "REPORT STYLE" not in result
         assert "FEEDBACK" not in result
+
+    def test_report_template_included(self):
+        result = build_knowledge_block(
+            findings=[], methodology="", report_template="Use executive summary style.", feedback=[]
+        )
+        assert "REPORT STYLE" in result
+        assert "Use executive summary style." in result
