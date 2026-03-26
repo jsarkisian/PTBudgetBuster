@@ -449,18 +449,24 @@ class Database:
     # -- Firm Knowledge -----------------------------------------------
 
     async def replace_firm_findings(self, findings: list[dict]):
-        """Delete all existing firm findings and insert the new list."""
+        """Delete all existing firm findings and insert the new list atomically."""
         now = _now()
-        await self._db.execute("DELETE FROM firm_findings")
-        for f in findings:
-            await self._db.execute(
-                """INSERT INTO firm_findings
-                   (finding_title, description, recommendations, "references", discussion_of_risk, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (f["finding_title"], f.get("description", ""), f.get("recommendations", ""),
-                 f.get("references", ""), f.get("discussion_of_risk", ""), now, now),
-            )
-        await self._db.commit()
+        # Atomic: if any insert fails, the DELETE is rolled back too
+        await self._db.execute("BEGIN")
+        try:
+            await self._db.execute("DELETE FROM firm_findings")
+            for f in findings:
+                await self._db.execute(
+                    """INSERT INTO firm_findings
+                       (finding_title, description, recommendations, "references", discussion_of_risk, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (f["finding_title"], f.get("description", ""), f.get("recommendations", ""),
+                     f.get("references", ""), f.get("discussion_of_risk", ""), now, now),
+                )
+            await self._db.commit()
+        except Exception:
+            await self._db.rollback()
+            raise
 
     async def get_firm_findings(self) -> list[dict]:
         async with self._db.execute(
@@ -471,6 +477,7 @@ class Database:
                 "id": r["id"], "finding_title": r["finding_title"],
                 "description": r["description"], "recommendations": r["recommendations"],
                 "references": r["references"], "discussion_of_risk": r["discussion_of_risk"],
+                "created_at": r["created_at"],
                 "updated_at": r["updated_at"],
             } for r in rows]
 

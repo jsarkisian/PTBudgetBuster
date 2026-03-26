@@ -242,6 +242,19 @@ class TestFindings:
         findings = run(db.get_findings(eng["id"]))
         assert findings == []
 
+    def test_update_finding_title_and_description(self, db):
+        eng = run(db.create_engagement(name="E", target_scope=["t.com"]))
+        run(db.save_finding(eng["id"], {
+            "severity": "high", "title": "Original Title",
+            "description": "Original desc", "evidence": "", "phase": "RECON",
+        }))
+        findings = run(db.get_findings(eng["id"]))
+        fid = findings[0]["id"]
+        run(db.update_finding(fid, title="New Title", description="New desc"))
+        updated = run(db.get_findings(eng["id"]))
+        assert updated[0]["title"] == "New Title"
+        assert updated[0]["description"] == "New desc"
+
 
 class TestChatHistory:
     def test_save_and_get_messages(self, db):
@@ -437,6 +450,14 @@ class TestFirmFindings:
             {"finding_title": "SQL Injection", "description": "d", "recommendations": "r", "references": "ref", "discussion_of_risk": "risk"},
         ]))
         run(db.clear_firm_findings())
+        rows = run(db.get_firm_findings())
+        assert rows == []
+
+    def test_replace_findings_with_empty_list_clears_table(self, db):
+        run(db.replace_firm_findings([
+            {"finding_title": "SQL Injection", "description": "d", "recommendations": "r", "references": "ref", "discussion_of_risk": "risk"},
+        ]))
+        run(db.replace_firm_findings([]))
         rows = run(db.get_firm_findings())
         assert rows == []
 
