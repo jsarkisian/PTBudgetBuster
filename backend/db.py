@@ -92,6 +92,27 @@ CREATE TABLE IF NOT EXISTS tool_lessons (
     engagement_id TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS firm_findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    finding_title TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    recommendations TEXT NOT NULL DEFAULT '',
+    "references" TEXT NOT NULL DEFAULT '',
+    discussion_of_risk TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS firm_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    finding_title TEXT NOT NULL,
+    action TEXT NOT NULL,
+    rejection_reason TEXT DEFAULT '',
+    reworded_title TEXT DEFAULT '',
+    reworded_description TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -331,6 +352,12 @@ class Database:
         if "exploitation_approved" in kwargs:
             sets.append("exploitation_approved = ?")
             vals.append(1 if kwargs["exploitation_approved"] else 0)
+        if "title" in kwargs:
+            sets.append("title = ?")
+            vals.append(kwargs["title"])
+        if "description" in kwargs:
+            sets.append("description = ?")
+            vals.append(kwargs["description"])
         if sets:
             vals.append(finding_id)
             await self._db.execute(
@@ -418,3 +445,71 @@ class Database:
             (key, json.dumps(value)),
         )
         await self._db.commit()
+
+    # -- Firm Knowledge -----------------------------------------------
+
+    async def replace_firm_findings(self, findings: list[dict]):
+        """Delete all existing firm findings and insert the new list."""
+        now = _now()
+        await self._db.execute("DELETE FROM firm_findings")
+        for f in findings:
+            await self._db.execute(
+                """INSERT INTO firm_findings
+                   (finding_title, description, recommendations, "references", discussion_of_risk, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (f["finding_title"], f.get("description", ""), f.get("recommendations", ""),
+                 f.get("references", ""), f.get("discussion_of_risk", ""), now, now),
+            )
+        await self._db.commit()
+
+    async def get_firm_findings(self) -> list[dict]:
+        async with self._db.execute(
+            "SELECT * FROM firm_findings ORDER BY finding_title"
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [{
+                "id": r["id"], "finding_title": r["finding_title"],
+                "description": r["description"], "recommendations": r["recommendations"],
+                "references": r["references"], "discussion_of_risk": r["discussion_of_risk"],
+                "updated_at": r["updated_at"],
+            } for r in rows]
+
+    async def get_firm_findings_status(self) -> dict:
+        async with self._db.execute(
+            "SELECT COUNT(*) as count, MAX(updated_at) as updated_at FROM firm_findings"
+        ) as cursor:
+            row = await cursor.fetchone()
+            return {"count": row["count"], "updated_at": row["updated_at"]}
+
+    async def clear_firm_findings(self):
+        await self._db.execute("DELETE FROM firm_findings")
+        await self._db.commit()
+
+    async def save_firm_feedback(self, finding_title: str, action: str,
+                                  rejection_reason: str, reworded_title: str,
+                                  reworded_description: str):
+        await self._db.execute(
+            """INSERT INTO firm_feedback
+               (finding_title, action, rejection_reason, reworded_title, reworded_description, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (finding_title, action, rejection_reason, reworded_title, reworded_description, _now()),
+        )
+        await self._db.commit()
+
+    async def get_firm_feedback(self, limit: int = 30) -> list[dict]:
+        async with self._db.execute(
+            """SELECT finding_title, action, rejection_reason, reworded_title, reworded_description
+               FROM firm_feedback ORDER BY created_at DESC LIMIT ?""",
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [{
+                "finding_title": r["finding_title"], "action": r["action"],
+                "rejection_reason": r["rejection_reason"], "reworded_title": r["reworded_title"],
+                "reworded_description": r["reworded_description"],
+            } for r in rows]
+
+    async def get_firm_feedback_count(self) -> int:
+        async with self._db.execute("SELECT COUNT(*) as count FROM firm_feedback") as cursor:
+            row = await cursor.fetchone()
+            return row["count"]

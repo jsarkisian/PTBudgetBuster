@@ -405,3 +405,63 @@ class TestToolLessons:
         lessons = run(db.get_tool_lessons())
         assert "tool_name" in lessons[0]
         assert "lesson" in lessons[0]
+
+
+class TestFirmFindings:
+    def test_replace_findings_clears_old_rows(self, db):
+        run(db.replace_firm_findings([
+            {"finding_title": "Old Finding", "description": "old", "recommendations": "", "references": "", "discussion_of_risk": ""},
+        ]))
+        run(db.replace_firm_findings([
+            {"finding_title": "New Finding", "description": "new", "recommendations": "", "references": "", "discussion_of_risk": ""},
+        ]))
+        rows = run(db.get_firm_findings())
+        assert len(rows) == 1
+        assert rows[0]["finding_title"] == "New Finding"
+
+    def test_get_firm_findings_status_empty(self, db):
+        status = run(db.get_firm_findings_status())
+        assert status["count"] == 0
+        assert status["updated_at"] is None
+
+    def test_get_firm_findings_status_after_import(self, db):
+        run(db.replace_firm_findings([
+            {"finding_title": "SQL Injection", "description": "desc", "recommendations": "rec", "references": "ref", "discussion_of_risk": "risk"},
+        ]))
+        status = run(db.get_firm_findings_status())
+        assert status["count"] == 1
+        assert status["updated_at"] is not None
+
+    def test_clear_firm_findings(self, db):
+        run(db.replace_firm_findings([
+            {"finding_title": "SQL Injection", "description": "d", "recommendations": "r", "references": "ref", "discussion_of_risk": "risk"},
+        ]))
+        run(db.clear_firm_findings())
+        rows = run(db.get_firm_findings())
+        assert rows == []
+
+
+class TestFirmFeedback:
+    def test_save_and_get_feedback(self, db):
+        run(db.save_firm_feedback("SQL Injection", "accepted", "", "", ""))
+        rows = run(db.get_firm_feedback(limit=10))
+        assert len(rows) == 1
+        assert rows[0]["finding_title"] == "SQL Injection"
+        assert rows[0]["action"] == "accepted"
+
+    def test_get_feedback_limit(self, db):
+        for i in range(5):
+            run(db.save_firm_feedback(f"Finding {i}", "accepted", "", "", ""))
+        rows = run(db.get_firm_feedback(limit=3))
+        assert len(rows) == 3
+
+    def test_get_feedback_newest_first(self, db):
+        run(db.save_firm_feedback("First", "accepted", "", "", ""))
+        run(db.save_firm_feedback("Second", "accepted", "", "", ""))
+        rows = run(db.get_firm_feedback(limit=10))
+        assert rows[0]["finding_title"] == "Second"
+
+    def test_get_feedback_count(self, db):
+        run(db.save_firm_feedback("SQL Injection", "rejected", "false positive", "", ""))
+        count = run(db.get_firm_feedback_count())
+        assert count == 1
