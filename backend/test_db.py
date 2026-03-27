@@ -486,3 +486,34 @@ class TestFirmFeedback:
         run(db.save_firm_feedback("SQL Injection", "rejected", "false positive", "", ""))
         count = run(db.get_firm_feedback_count())
         assert count == 1
+
+
+class TestToolResultsExtended:
+    def test_update_tool_result_stores_new_fields(self, db):
+        eng = run(db.create_engagement(name="T", target_scope=[]))
+        row_id = run(db.save_tool_start(eng["id"], "RECON", "nmap", {"target": "10.0.0.1"}))
+        run(db.update_tool_result(
+            row_id, "scan complete", "success",
+            error="", exit_code=0, duration_ms=1234,
+            completed_at="2026-01-01T00:00:00+00:00",
+        ))
+        rows = run(db.get_tool_results(eng["id"]))
+        assert len(rows) == 1
+        r = rows[0]
+        assert r["output"] == "scan complete"
+        assert r["status"] == "success"
+        assert r["error"] == ""
+        assert r["exit_code"] == 0
+        assert r["duration_ms"] == 1234
+        assert r["completed_at"] == "2026-01-01T00:00:00+00:00"
+
+    def test_get_tool_results_new_fields_default_null(self, db):
+        """Rows saved before migration (without new fields) return None for new columns."""
+        eng = run(db.create_engagement(name="T", target_scope=[]))
+        run(db.save_tool_start(eng["id"], "RECON", "subfinder", {"domain": "example.com"}))
+        rows = run(db.get_tool_results(eng["id"]))
+        r = rows[0]
+        assert "error" in r
+        assert "exit_code" in r
+        assert "duration_ms" in r
+        assert "completed_at" in r

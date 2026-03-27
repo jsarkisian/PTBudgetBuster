@@ -137,6 +137,18 @@ class Database:
             await self._db.commit()
         except Exception:
             pass  # Column already exists
+        # Migrate: add tool_results diagnostic columns
+        for col_ddl in [
+            "ALTER TABLE tool_results ADD COLUMN error TEXT DEFAULT ''",
+            "ALTER TABLE tool_results ADD COLUMN exit_code INTEGER DEFAULT NULL",
+            "ALTER TABLE tool_results ADD COLUMN duration_ms INTEGER DEFAULT NULL",
+            "ALTER TABLE tool_results ADD COLUMN completed_at TEXT DEFAULT NULL",
+        ]:
+            try:
+                await self._db.execute(col_ddl)
+                await self._db.commit()
+            except Exception:
+                pass  # Column already exists
 
     async def close(self):
         if self._db:
@@ -281,11 +293,16 @@ class Database:
         await self._db.commit()
         return cursor.lastrowid
 
-    async def update_tool_result(self, row_id: int, output: str, status: str):
-        """Update a running row with final output and status."""
+    async def update_tool_result(self, row_id: int, output: str, status: str,
+                                  error: str = "", exit_code: int = None,
+                                  duration_ms: int = None, completed_at: str = None):
+        """Update a running row with final output, status, and diagnostic fields."""
         await self._db.execute(
-            "UPDATE tool_results SET output = ?, status = ? WHERE id = ?",
-            (output, status, row_id),
+            """UPDATE tool_results
+               SET output = ?, status = ?, error = ?, exit_code = ?,
+                   duration_ms = ?, completed_at = ?
+               WHERE id = ?""",
+            (output, status, error, exit_code, duration_ms, completed_at, row_id),
         )
         await self._db.commit()
 
@@ -313,6 +330,10 @@ class Database:
                 "id": r["id"], "phase": r["phase"], "tool": r["tool"],
                 "input": json.loads(r["input"]), "output": r["output"],
                 "status": r["status"], "created_at": r["created_at"],
+                "error": r["error"] if r["error"] is not None else "",
+                "exit_code": r["exit_code"],
+                "duration_ms": r["duration_ms"],
+                "completed_at": r["completed_at"],
             } for r in rows]
 
     # -- Findings --------------------------------------------------
