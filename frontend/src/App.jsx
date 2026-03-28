@@ -47,7 +47,7 @@ export default function App() {
           </h1>
           {user.role === "admin" && (
             <button onClick={() => navigate("admin")} className="text-sm text-gray-400 hover:text-gray-200">
-              Users
+              Settings
             </button>
           )}
         </div>
