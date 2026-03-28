@@ -344,6 +344,7 @@ async def create_engagement(req: CreateEngagementRequest, user=Depends(get_curre
         notes=req.notes,
         scheduled_at=req.scheduled_at,
         tool_api_keys=req.tool_api_keys,
+        created_by=user.username,
     )
     # If scheduled_at provided, register with scheduler
     if req.scheduled_at:
@@ -988,3 +989,51 @@ async def websocket_endpoint(
         if engagement_id in ws_presence and entry in ws_presence[engagement_id]:
             ws_presence[engagement_id].remove(entry)
         await broadcast_presence(engagement_id)
+
+
+# ---------------------------------------------------------------------------
+# Notification config endpoints
+# ---------------------------------------------------------------------------
+
+class NotificationConfigRequest(BaseModel):
+    mailgun_api_key: str = ""
+    mailgun_domain: str = ""
+    mailgun_from: str = ""
+
+
+@app.get("/api/admin/notifications/config")
+async def get_notification_config(admin=Depends(require_admin)):
+    domain = await db.get_config("mailgun_domain") or ""
+    from_addr = await db.get_config("mailgun_from") or ""
+    api_key = await db.get_config("mailgun_api_key") or ""
+    return {
+        "mailgun_domain": domain,
+        "mailgun_from": from_addr,
+        "mailgun_api_key_set": bool(api_key),
+    }
+
+
+@app.post("/api/admin/notifications/config")
+async def save_notification_config(req: NotificationConfigRequest, admin=Depends(require_admin)):
+    if req.mailgun_api_key:
+        await db.set_config("mailgun_api_key", req.mailgun_api_key)
+    await db.set_config("mailgun_domain", req.mailgun_domain)
+    await db.set_config("mailgun_from", req.mailgun_from)
+    return {"ok": True}
+
+
+@app.post("/api/admin/notifications/test")
+async def test_notification(admin=Depends(require_admin)):
+    from notifications import send_test_email
+    api_key = await db.get_config("mailgun_api_key") or ""
+    domain = await db.get_config("mailgun_domain") or ""
+    from_addr = await db.get_config("mailgun_from") or ""
+    if not api_key or not domain:
+        raise HTTPException(400, "Mailgun not configured — set API key and domain first")
+    if not admin.email:
+        raise HTTPException(400, "No email address set on your account — update your profile first")
+    try:
+        await send_test_email(api_key, domain, from_addr, admin.email)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(400, f"Test email failed: {e}")
