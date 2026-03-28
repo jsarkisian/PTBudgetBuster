@@ -616,6 +616,36 @@ async def list_events(engagement_id: str, user=Depends(get_current_user)):
     return events
 
 
+@app.get("/api/engagements/{engagement_id}/tool-results")
+async def get_tool_results(engagement_id: str, user=Depends(get_current_user)):
+    """Return all tool results for an engagement."""
+    engagement = await db.get_engagement(engagement_id)
+    if not engagement:
+        raise HTTPException(404, "Engagement not found")
+    return await db.get_tool_results(engagement_id)
+
+
+@app.get("/api/engagements/{engagement_id}/export/full")
+async def export_full(engagement_id: str, user=Depends(get_current_user)):
+    """Export engagement metadata, findings, and tool results as combined JSON."""
+    engagement = await db.get_engagement(engagement_id)
+    if not engagement:
+        raise HTTPException(404, "Engagement not found")
+    findings = await db.get_findings(engagement_id)
+    tool_results = await db.get_tool_results(engagement_id)
+    return {
+        "engagement": {
+            "id": engagement["id"],
+            "name": engagement["name"],
+            "target_scope": engagement["target_scope"],
+            "status": engagement["status"],
+        },
+        "findings": findings,
+        "tool_results": tool_results,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.get("/api/engagements/{engagement_id}/findings/export")
 async def export_findings(engagement_id: str, user=Depends(get_current_user)):
     """Export findings as downloadable JSON."""
