@@ -996,44 +996,49 @@ async def websocket_endpoint(
 # ---------------------------------------------------------------------------
 
 class NotificationConfigRequest(BaseModel):
-    mailgun_api_key: str = ""
-    mailgun_domain: str = ""
-    mailgun_from: str = ""
+    smtp_host: str = ""
+    smtp_port: str = ""
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
 
 
 @app.get("/api/admin/notifications/config")
 async def get_notification_config(admin=Depends(require_admin)):
-    domain = await db.get_config("mailgun_domain") or ""
-    from_addr = await db.get_config("mailgun_from") or ""
-    api_key = await db.get_config("mailgun_api_key") or ""
     return {
-        "mailgun_domain": domain,
-        "mailgun_from": from_addr,
-        "mailgun_api_key_set": bool(api_key),
+        "smtp_host": await db.get_config("smtp_host") or "",
+        "smtp_port": await db.get_config("smtp_port") or "587",
+        "smtp_username": await db.get_config("smtp_username") or "",
+        "smtp_from": await db.get_config("smtp_from") or "",
+        "smtp_password_set": bool(await db.get_config("smtp_password")),
     }
 
 
 @app.post("/api/admin/notifications/config")
 async def save_notification_config(req: NotificationConfigRequest, admin=Depends(require_admin)):
-    if req.mailgun_api_key:
-        await db.set_config("mailgun_api_key", req.mailgun_api_key)
-    await db.set_config("mailgun_domain", req.mailgun_domain)
-    await db.set_config("mailgun_from", req.mailgun_from)
+    if req.smtp_password:
+        await db.set_config("smtp_password", req.smtp_password)
+    await db.set_config("smtp_host", req.smtp_host)
+    await db.set_config("smtp_port", req.smtp_port or "587")
+    await db.set_config("smtp_username", req.smtp_username)
+    await db.set_config("smtp_from", req.smtp_from)
     return {"ok": True}
 
 
 @app.post("/api/admin/notifications/test")
 async def test_notification(admin=Depends(require_admin)):
     from notifications import send_test_email
-    api_key = await db.get_config("mailgun_api_key") or ""
-    domain = await db.get_config("mailgun_domain") or ""
-    from_addr = await db.get_config("mailgun_from") or ""
-    if not api_key or not domain:
-        raise HTTPException(400, "Mailgun not configured — set API key and domain first")
+    smtp_host = await db.get_config("smtp_host") or "smtp.mailgun.org"
+    smtp_port = int(await db.get_config("smtp_port") or 587)
+    smtp_username = await db.get_config("smtp_username") or ""
+    smtp_password = await db.get_config("smtp_password") or ""
+    smtp_from = await db.get_config("smtp_from") or ""
+    if not smtp_username or not smtp_password:
+        raise HTTPException(400, "SMTP not configured — set username and password first")
     if not admin.email:
         raise HTTPException(400, "No email address set on your account — update your profile first")
     try:
-        await send_test_email(api_key, domain, from_addr, admin.email)
+        await send_test_email(smtp_host, smtp_port, smtp_username, smtp_password, smtp_from, admin.email)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(400, f"Test email failed: {e}")

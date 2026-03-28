@@ -38,18 +38,20 @@ _ENG = {
 }
 _USER = {"username": "alice", "email": "alice@example.com"}
 _CFG = {
-    "mailgun_api_key": "key-abc",
-    "mailgun_domain": "mg.example.com",
-    "mailgun_from": "test@mg.example.com",
+    "smtp_host": "smtp.mailgun.org",
+    "smtp_port": "587",
+    "smtp_username": "postmaster@mg.example.com",
+    "smtp_password": "secret",
+    "smtp_from": "test@mg.example.com",
 }
 
 
 @pytest.mark.anyio
 async def test_send_notification_skips_when_no_config():
     db = FakeDB(config={}, engagement=_ENG, user=_USER)
-    with patch("notifications._send_mailgun", new_callable=AsyncMock) as mock_mg:
+    with patch("notifications._send_smtp", new_callable=AsyncMock) as mock_smtp:
         await send_notification(db, SCAN_COMPLETED, "abc123")
-        mock_mg.assert_not_called()
+        mock_smtp.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -59,17 +61,17 @@ async def test_send_notification_skips_when_no_user_email():
         engagement=_ENG,
         user={"username": "alice", "email": ""},
     )
-    with patch("notifications._send_mailgun", new_callable=AsyncMock) as mock_mg:
+    with patch("notifications._send_smtp", new_callable=AsyncMock) as mock_smtp:
         await send_notification(db, SCAN_COMPLETED, "abc123")
-        mock_mg.assert_not_called()
+        mock_smtp.assert_not_called()
 
 
 @pytest.mark.anyio
 async def test_send_notification_no_engagement():
     db = FakeDB(config=_CFG, engagement=None, user=_USER)
-    with patch("notifications._send_mailgun", new_callable=AsyncMock) as mock_mg:
+    with patch("notifications._send_smtp", new_callable=AsyncMock) as mock_smtp:
         await send_notification(db, SCAN_COMPLETED, "missing")
-        mock_mg.assert_not_called()
+        mock_smtp.assert_not_called()
 
 
 def test_build_email_scan_completed():
@@ -120,11 +122,11 @@ def test_build_email_scan_failed():
 
 
 @pytest.mark.anyio
-async def test_send_notification_calls_mailgun_when_configured():
+async def test_send_notification_calls_smtp_when_configured():
     db = FakeDB(config=_CFG, engagement=_ENG, user=_USER)
-    with patch("notifications._send_mailgun", new_callable=AsyncMock) as mock_mg:
+    with patch("notifications._send_smtp", new_callable=AsyncMock) as mock_smtp:
         await send_notification(db, SCAN_COMPLETED, "abc123", extra={"findings": []})
-        mock_mg.assert_called_once()
-        _, _, _, to, subject, _ = mock_mg.call_args.args
+        mock_smtp.assert_called_once()
+        _, _, _, _, _, to, subject, _ = mock_smtp.call_args.args
         assert to == "alice@example.com"
         assert "Test Eng" in subject

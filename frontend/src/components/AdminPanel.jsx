@@ -417,7 +417,7 @@ export default function AdminPanel({ navigate }) {
   const [modal, setModal] = useState(null); // null | "create" | user object
   const [deleting, setDeleting] = useState(null);
   const [tab, setTab] = useState("users");
-  const [notifConfig, setNotifConfig] = useState({ mailgun_domain: "", mailgun_from: "", mailgun_api_key: "", mailgun_api_key_set: false });
+  const [notifConfig, setNotifConfig] = useState({ smtp_host: "smtp.mailgun.org", smtp_port: "587", smtp_username: "", smtp_password: "", smtp_from: "", smtp_password_set: false });
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifTesting, setNotifTesting] = useState(false);
   const [notifMsg, setNotifMsg] = useState("");
@@ -442,7 +442,7 @@ export default function AdminPanel({ navigate }) {
   const loadNotifConfig = async () => {
     try {
       const data = await getNotificationConfig();
-      setNotifConfig((prev) => ({ ...prev, ...data, mailgun_api_key: "" }));
+      setNotifConfig((prev) => ({ ...prev, ...data, smtp_password: "" }));
     } catch (_) {}
   };
 
@@ -592,43 +592,66 @@ export default function AdminPanel({ navigate }) {
         <div className="max-w-lg">
           <h2 className="text-xl font-bold text-gray-100 mb-1">Email Notifications</h2>
           <p className="text-sm text-gray-400 mb-6">
-            Configure Mailgun to send email alerts to scan owners on key events.
+            Configure SMTP to send email alerts to scan owners on key events.
           </p>
 
           <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <label className="block text-sm text-gray-300 mb-1">SMTP Host</label>
+                <input
+                  type="text"
+                  value={notifConfig.smtp_host}
+                  onChange={(e) => setNotifConfig((p) => ({ ...p, smtp_host: e.target.value }))}
+                  placeholder="smtp.mailgun.org"
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Port</label>
+                <input
+                  type="text"
+                  value={notifConfig.smtp_port}
+                  onChange={(e) => setNotifConfig((p) => ({ ...p, smtp_port: e.target.value }))}
+                  placeholder="587"
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="block text-sm text-gray-300 mb-1">Mailgun API Key</label>
+              <label className="block text-sm text-gray-300 mb-1">SMTP Username</label>
+              <input
+                type="text"
+                value={notifConfig.smtp_username}
+                onChange={(e) => setNotifConfig((p) => ({ ...p, smtp_username: e.target.value }))}
+                placeholder="postmaster@mg.yourfirm.com"
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">SMTP Password</label>
               <div className="flex items-center gap-2">
                 <input
                   type="password"
-                  value={notifConfig.mailgun_api_key}
-                  onChange={(e) => setNotifConfig((p) => ({ ...p, mailgun_api_key: e.target.value }))}
-                  placeholder={notifConfig.mailgun_api_key_set ? "••••••••••••••• (configured)" : "key-xxxxxxxx"}
+                  value={notifConfig.smtp_password}
+                  onChange={(e) => setNotifConfig((p) => ({ ...p, smtp_password: e.target.value }))}
+                  placeholder={notifConfig.smtp_password_set ? "••••••••••••••• (configured)" : "Enter password"}
                   className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
                 />
-                {notifConfig.mailgun_api_key_set && (
+                {notifConfig.smtp_password_set && (
                   <span className="text-xs text-green-400 shrink-0">✓ Configured</span>
                 )}
               </div>
             </div>
 
             <div>
-              <label className="block text-sm text-gray-300 mb-1">Sending Domain</label>
-              <input
-                type="text"
-                value={notifConfig.mailgun_domain}
-                onChange={(e) => setNotifConfig((p) => ({ ...p, mailgun_domain: e.target.value }))}
-                placeholder="mg.yourfirm.com"
-                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
               <label className="block text-sm text-gray-300 mb-1">From Address</label>
               <input
                 type="text"
-                value={notifConfig.mailgun_from}
-                onChange={(e) => setNotifConfig((p) => ({ ...p, mailgun_from: e.target.value }))}
+                value={notifConfig.smtp_from}
+                onChange={(e) => setNotifConfig((p) => ({ ...p, smtp_from: e.target.value }))}
                 placeholder="PTBudgetBuster <scans@mg.yourfirm.com>"
                 className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
               />
@@ -647,12 +670,14 @@ export default function AdminPanel({ navigate }) {
                   setNotifSaving(true); setNotifMsg(""); setNotifErr("");
                   try {
                     await saveNotificationConfig({
-                      mailgun_api_key: notifConfig.mailgun_api_key,
-                      mailgun_domain: notifConfig.mailgun_domain,
-                      mailgun_from: notifConfig.mailgun_from,
+                      smtp_host: notifConfig.smtp_host,
+                      smtp_port: notifConfig.smtp_port,
+                      smtp_username: notifConfig.smtp_username,
+                      smtp_password: notifConfig.smtp_password,
+                      smtp_from: notifConfig.smtp_from,
                     });
                     setNotifMsg("Settings saved.");
-                    setNotifConfig((p) => ({ ...p, mailgun_api_key: "", mailgun_api_key_set: p.mailgun_api_key_set || !!p.mailgun_api_key }));
+                    setNotifConfig((p) => ({ ...p, smtp_password: "", smtp_password_set: p.smtp_password_set || !!p.smtp_password }));
                     await loadNotifConfig();
                   } catch (e) {
                     setNotifErr(e.message || "Save failed");
@@ -675,8 +700,8 @@ export default function AdminPanel({ navigate }) {
                     setNotifErr(e.message || "Test failed");
                   } finally { setNotifTesting(false); }
                 }}
-                disabled={notifTesting || !notifConfig.mailgun_api_key_set}
-                title={!notifConfig.mailgun_api_key_set ? "Save your Mailgun config first" : "Send a test email to your account"}
+                disabled={notifTesting || !notifConfig.smtp_password_set}
+                title={!notifConfig.smtp_password_set ? "Save your SMTP config first" : "Send a test email to your account"}
                 className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 text-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               >
                 {notifTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}

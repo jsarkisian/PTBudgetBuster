@@ -1,10 +1,13 @@
 """Email notification module for PTBudgetBuster.
 
-Sends emails via Mailgun when key scan events occur. All failures are
+Sends emails via SMTP when key scan events occur. All failures are
 silently swallowed — notification errors must never stop a scan.
 """
 
-import httpx
+import asyncio
+import smtplib
+from email.mime.text import MIMEText
+
 from db import Database
 
 SCAN_COMPLETED = "scan_completed"
@@ -84,23 +87,41 @@ def _build_email(event: str, engagement: dict, extra: dict) -> tuple[str, str]:
     return subject, body
 
 
-async def _send_mailgun(
-    api_key: str,
-    domain: str,
+def _smtp_send_sync(
+    host: str,
+    port: int,
+    username: str,
+    password: str,
     from_addr: str,
     to_addr: str,
     subject: str,
     body: str,
 ) -> None:
-    """POST to the Mailgun messages API. Raises on non-2xx response."""
-    url = f"https://api.mailgun.net/v3/{domain}/messages"
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(
-            url,
-            auth=("api", api_key),
-            data={"from": from_addr, "to": to_addr, "subject": subject, "text": body},
-        )
-        resp.raise_for_status()
+    """Send email via SMTP (synchronous). Raises on failure."""
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to_addr
+    with smtplib.SMTP(host, port, timeout=15) as server:
+        server.starttls()
+        server.login(username, password)
+        server.sendmail(from_addr, [to_addr], msg.as_string())
+
+
+async def _send_smtp(
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    from_addr: str,
+    to_addr: str,
+    subject: str,
+    body: str,
+) -> None:
+    """Send email via SMTP. Raises on failure."""
+    await asyncio.to_thread(
+        _smtp_send_sync, host, port, username, password, from_addr, to_addr, subject, body
+    )
 
 
 async def send_notification(
@@ -117,10 +138,12 @@ async def send_notification(
     try:
         if extra is None:
             extra = {}
-        api_key = await db.get_config("mailgun_api_key") or ""
-        domain = await db.get_config("mailgun_domain") or ""
-        from_addr = await db.get_config("mailgun_from") or ""
-        if not api_key or not domain:
+        smtp_host = await db.get_config("smtp_host") or "smtp.mailgun.org"
+        smtp_port = int(await db.get_config("smtp_port") or 587)
+        smtp_username = await db.get_config("smtp_username") or ""
+        smtp_password = await db.get_config("smtp_password") or ""
+        smtp_from = await db.get_config("smtp_from") or ""
+        if not smtp_username or not smtp_password:
             return
 
         engagement = await db.get_engagement(engagement_id)
@@ -136,21 +159,21 @@ async def send_notification(
             return
 
         subject, body = _build_email(event, engagement, extra)
-        await _send_mailgun(api_key, domain, from_addr, user["email"], subject, body)
+        await _send_smtp(
+            smtp_host, smtp_port, smtp_username, smtp_password,
+            smtp_from, user["email"], subject, body,
+        )
 
     except Exception:
         pass  # Never propagate — scan must continue
 
 
 async def send_test_email(
-    api_key: str, domain: str, from_addr: str, to_addr: str
+    host: str, port: int, username: str, password: str, from_addr: str, to_addr: str
 ) -> None:
-    """Send a test email to verify Mailgun configuration. Raises on failure."""
-    await _send_mailgun(
-        api_key,
-        domain,
-        from_addr,
-        to_addr,
+    """Send a test email to verify SMTP configuration. Raises on failure."""
+    await _send_smtp(
+        host, port, username, password, from_addr, to_addr,
         subject="PTBudgetBuster — test email",
-        body="Your Mailgun configuration is working correctly.",
+        body="Your SMTP configuration is working correctly.",
     )
