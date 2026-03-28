@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import {
   ArrowLeft, Plus, Trash2, Edit2, Shield, User, Check, X, Loader2,
-  BookOpen, Upload, FileText,
+  BookOpen, Upload, FileText, Mail,
 } from "lucide-react";
 import { listUsers, createUser, updateUser, deleteUser } from "../utils/api";
 import {
   getFirmKnowledgeStatus, uploadFirmFindings, clearFirmFindings,
   getMethodology, saveMethodology, clearMethodology,
   uploadReportTemplate, clearReportTemplate,
+  getNotificationConfig, saveNotificationConfig, sendTestEmail,
 } from "../utils/api";
 
 const ROLES = ["admin", "operator", "viewer"];
@@ -416,6 +417,11 @@ export default function AdminPanel({ navigate }) {
   const [modal, setModal] = useState(null); // null | "create" | user object
   const [deleting, setDeleting] = useState(null);
   const [tab, setTab] = useState("users");
+  const [notifConfig, setNotifConfig] = useState({ mailgun_domain: "", mailgun_from: "", mailgun_api_key: "", mailgun_api_key_set: false });
+  const [notifSaving, setNotifSaving] = useState(false);
+  const [notifTesting, setNotifTesting] = useState(false);
+  const [notifMsg, setNotifMsg] = useState("");
+  const [notifErr, setNotifErr] = useState("");
 
   const fetchUsers = async () => {
     try {
@@ -432,6 +438,15 @@ export default function AdminPanel({ navigate }) {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  const loadNotifConfig = async () => {
+    try {
+      const data = await getNotificationConfig();
+      setNotifConfig((prev) => ({ ...prev, ...data, mailgun_api_key: "" }));
+    } catch (_) {}
+  };
+
+  useEffect(() => { loadNotifConfig(); }, []);
 
   const handleDelete = async (username) => {
     if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
@@ -469,7 +484,7 @@ export default function AdminPanel({ navigate }) {
       <h2 className="text-xl font-bold text-gray-100 mb-6">Admin</h2>
 
       <div className="flex gap-1 mb-6 border-b border-gray-800">
-        {[["users", "User Management"], ["firm", "Firm Knowledge"]].map(([key, label]) => (
+        {[["users", "User Management"], ["firm", "Firm Knowledge"], ["notifications", "Notifications"]].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
@@ -572,6 +587,115 @@ export default function AdminPanel({ navigate }) {
       )}
 
       {tab === "firm" && <FirmKnowledge />}
+
+      {tab === "notifications" && (
+        <div className="max-w-lg">
+          <h2 className="text-xl font-bold text-gray-100 mb-1">Email Notifications</h2>
+          <p className="text-sm text-gray-400 mb-6">
+            Configure Mailgun to send email alerts to scan owners on key events.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">Mailgun API Key</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={notifConfig.mailgun_api_key}
+                  onChange={(e) => setNotifConfig((p) => ({ ...p, mailgun_api_key: e.target.value }))}
+                  placeholder={notifConfig.mailgun_api_key_set ? "••••••••••••••• (configured)" : "key-xxxxxxxx"}
+                  className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                />
+                {notifConfig.mailgun_api_key_set && (
+                  <span className="text-xs text-green-400 shrink-0">✓ Configured</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">Sending Domain</label>
+              <input
+                type="text"
+                value={notifConfig.mailgun_domain}
+                onChange={(e) => setNotifConfig((p) => ({ ...p, mailgun_domain: e.target.value }))}
+                placeholder="mg.yourfirm.com"
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">From Address</label>
+              <input
+                type="text"
+                value={notifConfig.mailgun_from}
+                onChange={(e) => setNotifConfig((p) => ({ ...p, mailgun_from: e.target.value }))}
+                placeholder="PTBudgetBuster <scans@mg.yourfirm.com>"
+                className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            {notifErr && (
+              <p className="text-sm text-red-400">{notifErr}</p>
+            )}
+            {notifMsg && (
+              <p className="text-sm text-green-400">{notifMsg}</p>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={async () => {
+                  setNotifSaving(true); setNotifMsg(""); setNotifErr("");
+                  try {
+                    await saveNotificationConfig({
+                      mailgun_api_key: notifConfig.mailgun_api_key,
+                      mailgun_domain: notifConfig.mailgun_domain,
+                      mailgun_from: notifConfig.mailgun_from,
+                    });
+                    setNotifMsg("Settings saved.");
+                    setNotifConfig((p) => ({ ...p, mailgun_api_key: "", mailgun_api_key_set: p.mailgun_api_key_set || !!p.mailgun_api_key }));
+                    await loadNotifConfig();
+                  } catch (e) {
+                    setNotifErr(e.message || "Save failed");
+                  } finally { setNotifSaving(false); }
+                }}
+                disabled={notifSaving}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                {notifSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Save
+              </button>
+
+              <button
+                onClick={async () => {
+                  setNotifTesting(true); setNotifMsg(""); setNotifErr("");
+                  try {
+                    await sendTestEmail();
+                    setNotifMsg("Test email sent — check your inbox.");
+                  } catch (e) {
+                    setNotifErr(e.message || "Test failed");
+                  } finally { setNotifTesting(false); }
+                }}
+                disabled={notifTesting || !notifConfig.mailgun_api_key_set}
+                title={!notifConfig.mailgun_api_key_set ? "Save your Mailgun config first" : "Send a test email to your account"}
+                className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 text-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                {notifTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                Send Test Email
+              </button>
+            </div>
+
+            <div className="mt-6 border-t border-gray-800 pt-4">
+              <p className="text-xs text-gray-500 font-medium mb-2">Emails are sent for:</p>
+              <ul className="text-xs text-gray-500 space-y-1">
+                <li>• Scan completed</li>
+                <li>• Exploitation approval needed</li>
+                <li>• Critical severity finding recorded</li>
+                <li>• Scan failed / stopped unexpectedly</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create / Edit Modal */}
       {modal !== null && (

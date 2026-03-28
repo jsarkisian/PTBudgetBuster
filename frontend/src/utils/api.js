@@ -116,3 +116,10 @@ export const submitFindingFeedback = (engagementId, findingId, payload) =>
 
 // Health
 export const getHealth = () => request("/api/health");
+
+// Notifications (admin)
+export const getNotificationConfig = () => request("/api/admin/notifications/config");
+export const saveNotificationConfig = (data) =>
+  request("/api/admin/notifications/config", { method: "POST", body: JSON.stringify(data) });
+export const sendTestEmail = () =>
+  request("/api/admin/notifications/test", { method: "POST" });
