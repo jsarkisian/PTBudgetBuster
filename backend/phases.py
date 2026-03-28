@@ -29,7 +29,15 @@ class Phase:
 PHASES: list[Phase] = [
     Phase(
         name="RECON",
-        objective="Discover subdomains, live hosts, and DNS records for the target scope.",
+        objective=(
+            "Discover subdomains, live hosts, and DNS records for the target scope. "
+            "If the kickoff message reports Cloudflare detected, follow the CF bypass steps "
+            "from the SYSTEM_PROMPT: query crt.sh for certificate transparency subdomains, "
+            "extract origin IPs from MX and SPF records, and compare each resolved subdomain "
+            "IP against Cloudflare ranges. Call add_to_scope for any discovered origin IP. "
+            "Record the Cloudflare detection as an info finding. Record origin IP exposure "
+            "as a high finding if found."
+        ),
         tool_chains=[
             ["subfinder", "dnsx", "httpx"],
             ["fierce", "dnsrecon"],
@@ -52,7 +60,10 @@ PHASES: list[Phase] = [
             "execute_bash (printf or echo -e). Then run httpx, naabu, nmap, whatweb, and "
             "wafw00f against the full list in one call each using their list flags "
             "(-l for httpx/naabu/dnsx, -iL for nmap, -i for whatweb/wafw00f). "
-            "NEVER call a tool once per host — always batch via list file."
+            "NEVER call a tool once per host — always batch via list file. "
+            "If a non-Cloudflare origin IP was added to scope during RECON, also run "
+            "nmap -sV -Pn -p 80,443,8080,8443 and httpx with a Host header against it "
+            "to confirm direct origin server access."
         ),
         tool_chains=[
             ["naabu", "nmap"],
