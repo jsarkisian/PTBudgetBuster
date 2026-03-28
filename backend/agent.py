@@ -1375,6 +1375,22 @@ class PentestAgent:
                     for i, r in enumerate(cf_raw)
                 ]
                 kickoff += build_cf_kickoff_block(cf_results) + "\n"
+                # Broadcast CF detection summary to live UI
+                detected = [r for r in cf_results if r.cloudflare_detected]
+                if detected:
+                    domains_str = ", ".join(r.domain for r in detected)
+                    await self.broadcast({
+                        "type": "auto_status",
+                        "message": f"[CF Detection] {len(detected)} target(s) behind Cloudflare: {domains_str}. Bypass techniques queued (crt.sh, MX/SPF, subdomain IP check).",
+                        "timestamp": self._ts(),
+                    })
+                else:
+                    domain_list = ", ".join(r.domain for r in cf_results) if cf_results else scope_str
+                    await self.broadcast({
+                        "type": "auto_status",
+                        "message": f"[CF Detection] No Cloudflare detected on {domain_list}. Proceeding with standard recon.",
+                        "timestamp": self._ts(),
+                    })
             # For ANALYSIS: inject firm knowledge + recorded findings
             if phase.name == "ANALYSIS":
                 # Build firm knowledge block from DB
