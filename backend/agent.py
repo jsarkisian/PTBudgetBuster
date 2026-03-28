@@ -219,6 +219,37 @@ wafw00f https://example.com [-a]        # -a finds all matching WAFs
 wafw00f -i targets.txt
 ```
 
+**Cloudflare Bypass Techniques** — follow when RECON kickoff reports CF detected
+
+When the kickoff message shows "Cloudflare Pre-Scan Detection" with targets behind CF,
+work through these steps using execute_bash. Stop at the first step that yields an origin IP.
+
+**Step 1 — Certificate Transparency via crt.sh** (reveals subdomains not behind CF):
+Use execute_bash with:
+  curl -s 'https://crt.sh/?q=%.DOMAIN&output=json' | python3 -c "import sys,json; data=json.load(sys.stdin); [print(c['name_value']) for c in data if '\\n' not in c['name_value']]" | sort -u | tee /tmp/crt_subs.txt && cat /tmp/crt_subs.txt | /root/go/bin/dnsx -a -resp -silent
+Replace DOMAIN with the target (e.g. example.com). Check each resolved IP — if any is NOT in
+a Cloudflare range, it is a candidate origin IP. Call add_to_scope with it.
+
+**Step 2 — MX and SPF record origin extraction**:
+Use execute_bash with:
+  dig MX DOMAIN +short && dig TXT DOMAIN +short | grep -i spf
+Resolve each MX hostname. Extract ip4: entries from SPF. If any IP is not in CF ranges,
+add to scope as potential origin.
+
+**Step 3 — Subdomain IP comparison** (after subfinder/dnsrecon runs):
+After subdomain enumeration, compare resolved IPs against CF ranges. Use execute_bash:
+  cat /tmp/hosts.txt | /root/go/bin/dnsx -a -resp -silent | grep -v "cloudflare\|104\.1[6-9]\|104\.2[0-7]\|172\.6[4-9]\|172\.7[01]\|162\.15[89]\|162\.1[6-9][0-9]\|173\.245\|108\.162\|141\.101"
+
+**Step 4 — Direct-to-origin confirmation** (in ENUMERATION, after origin IP found):
+Use execute_bash with:
+  /root/go/bin/httpx -u http://ORIGIN_IP -H "Host: DOMAIN" -title -status-code -silent
+  nmap -sV -Pn -p 80,443,8080,8443,8888 ORIGIN_IP
+If the HTTP response matches the target application, origin IP access is confirmed.
+
+**Findings to record when CF is present**:
+- CF detected: record_finding(severity="info", title="Cloudflare CDN/WAF Detected", description="Target is fronted by Cloudflare CDN/WAF, hiding the origin IP. Direct exploitation requires bypassing CF or finding the origin.", evidence="<CF IP> resolves to Cloudflare range")
+- Origin IP exposed: record_finding(severity="high", title="Cloudflare Origin IP Exposed", description="Origin server IP discovered via [method], allowing direct access that bypasses Cloudflare WAF protection.", evidence="<origin IP> responds to Host: DOMAIN header with matching content")
+
 **nikto** — web server vulnerability scanning
 ```
 nikto -h https://example.com [-p 443] [-ssl] [-Tuning 1234]
@@ -1327,6 +1358,23 @@ class PentestAgent:
                 f"Objective: {phase.objective}\n"
                 f"Target scope: {scope_str}\n\n"
             )
+            # For RECON: run CF detection and inject results into kickoff
+            if phase.name == "RECON":
+                from cloudflare import check_domain, build_cf_kickoff_block, CFCheckResult
+                scope_domains = [
+                    t.replace("https://", "").replace("http://", "")
+                    .split("/")[0].split(":")[0]
+                    for t in target_scope
+                ]
+                cf_raw = await asyncio.gather(
+                    *[check_domain(d) for d in scope_domains],
+                    return_exceptions=True,
+                )
+                cf_results = [
+                    r if isinstance(r, CFCheckResult) else CFCheckResult(domain=scope_domains[i])
+                    for i, r in enumerate(cf_raw)
+                ]
+                kickoff += build_cf_kickoff_block(cf_results) + "\n"
             # For ANALYSIS: inject firm knowledge + recorded findings
             if phase.name == "ANALYSIS":
                 # Build firm knowledge block from DB
