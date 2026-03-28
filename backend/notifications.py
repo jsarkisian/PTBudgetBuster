@@ -1,4 +1,4 @@
-"""Email notification module for PTBudgetBuster.
+"""Email notification module for AutoXPT.
 
 Sends emails via SMTP when key scan events occur. All failures are
 silently swallowed — notification errors must never stop a scan.
@@ -174,6 +174,6 @@ async def send_test_email(
     """Send a test email to verify SMTP configuration. Raises on failure."""
     await _send_smtp(
         host, port, username, password, from_addr, to_addr,
-        subject="PTBudgetBuster — test email",
+        subject="AutoXPT — test email",
         body="Your SMTP configuration is working correctly.",
     )

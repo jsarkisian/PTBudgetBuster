@@ -43,7 +43,7 @@ export default function App() {
       <header className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-bold cursor-pointer" onClick={() => navigate("dashboard")}>
-            PTBudgetBuster
+            AutoXPT
           </h1>
           {user.role === "admin" && (
             <button onClick={() => navigate("admin")} className="text-sm text-gray-400 hover:text-gray-200">

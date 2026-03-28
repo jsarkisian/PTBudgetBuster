@@ -28,7 +28,7 @@ export default function Login({ onLogin }) {
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
           <Shield className="w-12 h-12 text-blue-500 mb-3" />
-          <h1 className="text-2xl font-bold text-gray-100">PTBudgetBuster</h1>
+          <h1 className="text-2xl font-bold text-gray-100">AutoXPT</h1>
           <p className="text-gray-400 text-sm mt-1">Autonomous Pentest Platform</p>
         </div>
 

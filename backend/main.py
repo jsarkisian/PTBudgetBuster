@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PTBudgetBuster Backend — Autonomous Pentest Orchestrator.
+AutoXPT Backend — Autonomous Pentest Orchestrator.
 
 Trimmed endpoint set (~25 endpoints), backed by:
   - Database (SQLite via aiosqlite)
@@ -103,7 +103,7 @@ async def lifespan(app: FastAPI):
     await db.close()
 
 
-app = FastAPI(title="PTBudgetBuster Backend", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="AutoXPT Backend", version="2.0.0", lifespan=lifespan)
 
 origins = [o.strip() for o in settings.allowed_origins.split(",")]
 app.add_middleware(

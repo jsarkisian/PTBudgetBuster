@@ -652,7 +652,7 @@ export default function AdminPanel({ navigate }) {
                 type="text"
                 value={notifConfig.smtp_from}
                 onChange={(e) => setNotifConfig((p) => ({ ...p, smtp_from: e.target.value }))}
-                placeholder="PTBudgetBuster <scans@mg.yourfirm.com>"
+                placeholder="AutoXPT <scans@mg.yourfirm.com>"
                 className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500"
               />
             </div>
