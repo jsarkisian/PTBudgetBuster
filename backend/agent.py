@@ -20,6 +20,7 @@ import httpx
 from bedrock_client import BedrockClient
 from db import Database
 from firm_knowledge import build_knowledge_block
+from notifications import send_notification, SCAN_COMPLETED, APPROVAL_NEEDED, CRITICAL_FINDING, SCAN_FAILED
 from phases import PhaseStateMachine
 from tool_failure_classifier import classify_failure, FailureType
 
@@ -972,6 +973,17 @@ class PentestAgent:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
+            if finding.get("severity", "").lower() == "critical":
+                await send_notification(
+                    self.db, CRITICAL_FINDING, self.engagement_id,
+                    extra={
+                        "title": finding.get("title", ""),
+                        "description": finding.get("description", ""),
+                        "evidence": finding.get("evidence", ""),
+                        "phase": finding.get("phase", phase),
+                    },
+                )
+
             return f"Finding recorded: [{finding['severity'].upper()}] {finding['title']}"
 
         elif tool_name == "read_file":
@@ -1214,6 +1226,12 @@ class PentestAgent:
                 })
             except Exception:
                 pass
+            eng = await self.db.get_engagement(self.engagement_id)
+            current_phase = (eng or {}).get("current_phase", "Unknown") if eng else "Unknown"
+            await send_notification(
+                self.db, SCAN_FAILED, self.engagement_id,
+                extra={"reason": str(e), "phase": current_phase},
+            )
 
         self._running = False
         # Don't overwrite awaiting_approval — that state must persist so the
@@ -1265,6 +1283,11 @@ class PentestAgent:
                     status="awaiting_approval",
                     current_phase=phase.name,
                 )
+                findings = await self.db.get_findings(self.engagement_id)
+                await send_notification(
+                    self.db, APPROVAL_NEEDED, self.engagement_id,
+                    extra={"finding_count": len(findings)},
+                )
                 return  # Caller should wait for resume_exploitation()
 
             # Run this phase
@@ -1301,6 +1324,11 @@ class PentestAgent:
                     self.engagement_id,
                     status="completed",
                     current_phase=phase_sm.current_phase.name,
+                )
+                findings = await self.db.get_findings(self.engagement_id)
+                await send_notification(
+                    self.db, SCAN_COMPLETED, self.engagement_id,
+                    extra={"findings": findings},
                 )
                 return
 
