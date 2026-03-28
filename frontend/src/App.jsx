@@ -5,6 +5,7 @@ import EngagementSetup from "./components/EngagementSetup";
 import EngagementLive from "./components/EngagementLive";
 import ExploitApproval from "./components/ExploitApproval";
 import FindingsReport from "./components/FindingsReport";
+import ToolLogs from "./components/ToolLogs";
 import AdminPanel from "./components/AdminPanel";
 import { getMe } from "./utils/api";
 
@@ -61,6 +62,7 @@ export default function App() {
         {view === "live" && <EngagementLive engagementId={selectedEngagement} navigate={navigate} />}
         {view === "approval" && <ExploitApproval engagementId={selectedEngagement} navigate={navigate} />}
         {view === "findings" && <FindingsReport engagementId={selectedEngagement} navigate={navigate} />}
+        {view === "logs" && <ToolLogs engagementId={selectedEngagement} navigate={navigate} />}
         {view === "admin" && <AdminPanel navigate={navigate} />}
       </main>
     </div>

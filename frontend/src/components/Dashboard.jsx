@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Trash2, RefreshCw, Clock, Play, CheckCircle, AlertTriangle, Circle, XCircle, RotateCcw, Square } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Clock, Play, CheckCircle, AlertTriangle, Circle, XCircle, RotateCcw, Square, ScrollText } from "lucide-react";
 import { listEngagements, deleteEngagement, startEngagement } from "../utils/api";
 
 const STATUS_STYLES = {
@@ -195,6 +195,13 @@ export default function Dashboard({ user, navigate }) {
                           <RotateCcw className="w-4 h-4" />
                         </button>
                       )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate("logs", eng.id); }}
+                        className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-gray-700 rounded transition-colors"
+                        title="View tool logs"
+                      >
+                        <ScrollText className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={(e) => handleDelete(e, eng)}
                         disabled={deleting === eng.id}

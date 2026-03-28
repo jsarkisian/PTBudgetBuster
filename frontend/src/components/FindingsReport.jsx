@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ArrowLeft, Download, ChevronUp, ChevronDown, Loader2, ThumbsUp, ThumbsDown, Edit2 } from "lucide-react";
+import { ArrowLeft, Download, ChevronUp, ChevronDown, Loader2, ThumbsUp, ThumbsDown, Edit2, ScrollText } from "lucide-react";
 import { getFindings, getEngagement, exportFindings, submitFindingFeedback } from "../utils/api";
 
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -146,18 +146,27 @@ export default function FindingsReport({ engagementId, navigate }) {
             <p className="text-sm text-gray-400 mt-1">{engagement.name}</p>
           )}
         </div>
-        <button
-          onClick={handleExport}
-          disabled={exporting || findings.length === 0}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-        >
-          {exporting ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Download className="w-4 h-4" />
-          )}
-          Export JSON
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate("logs", engagementId)}
+            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            <ScrollText className="w-4 h-4" />
+            Tool Logs
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={exporting || findings.length === 0}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            {exporting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Export JSON
+          </button>
+        </div>
       </div>
 
       {/* Severity Summary */}
