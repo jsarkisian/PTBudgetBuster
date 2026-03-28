@@ -45,6 +45,8 @@ export const approveExploitation = (id, findingIds) =>
 // Findings
 export const getFindings = (id) => request(`/api/engagements/${id}/findings`);
 export const exportFindings = (id) => request(`/api/engagements/${id}/findings/export`);
+export const getToolResults = (id) => request(`/api/engagements/${id}/tool-results`);
+export const exportFull = (id) => request(`/api/engagements/${id}/export/full`);
 
 // Events (historical log)
 export const getEvents = (id) => request(`/api/engagements/${id}/events`);
