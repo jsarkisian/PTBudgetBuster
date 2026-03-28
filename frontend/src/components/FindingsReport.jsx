@@ -264,8 +264,10 @@ export default function FindingsReport({ engagementId, navigate }) {
                     {idx < 4 && (
                       <div
                         onMouseDown={(e) => startDrag(e, idx)}
-                        className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/60 transition-colors"
-                      />
+                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize group flex items-center justify-center"
+                      >
+                        <div className="w-px h-4 bg-gray-600 group-hover:bg-blue-400 group-hover:h-full transition-all" />
+                      </div>
                     )}
                   </th>
                 ))}
