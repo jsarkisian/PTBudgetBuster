@@ -1195,8 +1195,14 @@ class PentestAgent:
 
         target_scope = engagement["target_scope"]
 
-        # Check for a saved phase state to resume from
+        # Check for a saved phase state to resume from.
+        # Never resume at EXPLOITATION — that phase is entered exclusively via
+        # resume_exploitation(). If current_phase is EXPLOITATION it means the
+        # scan previously paused for approval; starting run_autonomous again
+        # should re-run RECON→ANALYSIS so the operator gets fresh findings.
         start_phase = engagement.get("current_phase") or None
+        if start_phase == "EXPLOITATION":
+            start_phase = None  # restart from RECON
 
         phase_sm = PhaseStateMachine(start_phase=start_phase)
 

@@ -280,7 +280,7 @@ export default function EngagementLive({ engagementId, navigate }) {
         const idx = PHASES.findIndex((p) => p.id === eng.current_phase);
         if (idx > 0) setCompletedPhases(PHASES.slice(0, idx).map((p) => p.id));
       }
-      if (eng.status === "awaiting_approval" || (eng.current_phase === "EXPLOITATION" && ["paused", "stopped"].includes(eng.status))) setAwaitingApproval(true);
+      if (eng.status === "awaiting_approval") setAwaitingApproval(true);
       if (eng.status === "completed") setCompleted(true);
       if (historicalEvents.length > 0) setEvents(historicalEvents);
       if (historicalFindings.length > 0) setFindings(historicalFindings);
