@@ -149,6 +149,14 @@ class Database:
                 await self._db.commit()
             except Exception:
                 pass  # Column already exists
+        # Migrate: add created_by to engagements
+        try:
+            await self._db.execute(
+                "ALTER TABLE engagements ADD COLUMN created_by TEXT DEFAULT ''"
+            )
+            await self._db.commit()
+        except Exception:
+            pass  # Column already exists
 
     async def close(self):
         if self._db:
@@ -158,16 +166,17 @@ class Database:
 
     async def create_engagement(self, name: str, target_scope: list[str],
                                 notes: str = "", scheduled_at: str = None,
-                                tool_api_keys: dict = None) -> dict:
+                                tool_api_keys: dict = None,
+                                created_by: str = "") -> dict:
         eid = str(uuid.uuid4())[:12]
         now = _now()
         status = "scheduled" if scheduled_at else "created"
         await self._db.execute(
             """INSERT INTO engagements
-               (id, name, target_scope, notes, status, scheduled_at, tool_api_keys, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (id, name, target_scope, notes, status, scheduled_at, tool_api_keys, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (eid, name, json.dumps(target_scope), notes, status,
-             scheduled_at, json.dumps(tool_api_keys or {}), now, now),
+             scheduled_at, json.dumps(tool_api_keys or {}), created_by, now, now),
         )
         await self._db.commit()
         return await self.get_engagement(eid)
@@ -191,7 +200,7 @@ class Database:
     async def update_engagement(self, eid: str, **kwargs) -> Optional[dict]:
         sets, vals = [], []
         for key in ("name", "target_scope", "notes", "status", "current_phase",
-                     "scheduled_at", "tool_api_keys"):
+                     "scheduled_at", "tool_api_keys", "created_by"):
             if key in kwargs:
                 val = kwargs[key]
                 if key in ("target_scope", "tool_api_keys"):
@@ -223,6 +232,7 @@ class Database:
             "current_phase": row["current_phase"],
             "scheduled_at": row["scheduled_at"],
             "tool_api_keys": json.loads(row["tool_api_keys"]),
+            "created_by": row["created_by"] if "created_by" in row.keys() else "",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
