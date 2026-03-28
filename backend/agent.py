@@ -10,6 +10,7 @@ import asyncio
 import ipaddress
 import json
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Optional
@@ -802,20 +803,29 @@ class PentestAgent:
                     self.engagement_id, phase, tool_input["tool"], tool_input["parameters"]
                 )
 
+                t_start = time.time()
                 resp = await client.post("/execute/sync", json={
                     "tool": tool_input["tool"],
                     "parameters": tool_input["parameters"],
                     "task_id": task_id,
                     "timeout": 300,
                 })
+                duration_ms = int((time.time() - t_start) * 1000)
                 result = resp.json()
 
                 output = _redact_output(result.get("output", ""))
                 error = _redact_output(result.get("error", ""))
                 status = result.get("status", "unknown")
+                exit_code = result.get("exit_code")
 
-                # Update the running row with final output
-                await self.db.update_tool_result(row_id, output[:10000], status)
+                # Update the running row with final output and diagnostics
+                await self.db.update_tool_result(
+                    row_id, output[:10000], status,
+                    error=error[:5000] if error else "",
+                    exit_code=exit_code,
+                    duration_ms=duration_ms,
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                )
 
                 await self.broadcast({
                     "type": "tool_result",
@@ -866,20 +876,29 @@ class PentestAgent:
                     self.engagement_id, phase, "bash", {"command": tool_input["command"]}
                 )
 
+                t_start = time.time()
                 resp = await client.post("/execute/sync", json={
                     "tool": "bash",
                     "parameters": {"command": tool_input["command"]},
                     "task_id": task_id,
                     "timeout": 300,
                 })
+                duration_ms = int((time.time() - t_start) * 1000)
                 result = resp.json()
 
                 output = _redact_output(result.get("output", ""))
                 error = _redact_output(result.get("error", ""))
                 status = result.get("status", "unknown")
+                exit_code = result.get("exit_code")
 
-                # Update the running row with final output
-                await self.db.update_tool_result(row_id, output[:10000], status)
+                # Update the running row with final output and diagnostics
+                await self.db.update_tool_result(
+                    row_id, output[:10000], status,
+                    error=error[:5000] if error else "",
+                    exit_code=exit_code,
+                    duration_ms=duration_ms,
+                    completed_at=datetime.now(timezone.utc).isoformat(),
+                )
 
                 await self.broadcast({
                     "type": "tool_result",
