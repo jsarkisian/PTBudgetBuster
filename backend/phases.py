@@ -81,7 +81,13 @@ PHASES: list[Phase] = [
     ),
     Phase(
         name="VULN_SCAN",
-        objective="Scan for known vulnerabilities across discovered services and web applications.",
+        objective=(
+            "Scan for known vulnerabilities across discovered services and web applications. "
+            "BATCHING REQUIRED: Write all live URLs/hosts to /tmp/vuln_targets.txt using "
+            "execute_bash, then run nuclei once against the full list using -l /tmp/vuln_targets.txt. "
+            "NEVER run nuclei once per host — a single nuclei -l call covers all targets. "
+            "Use -as for automatic scan mode or -severity medium,high,critical to focus on impactful findings."
+        ),
         tool_chains=[
             ["nuclei"],
             ["wpscan"],
