@@ -9,10 +9,16 @@ import ToolLogs from "./components/ToolLogs";
 import AdminPanel from "./components/AdminPanel";
 import { getMe } from "./utils/api";
 
+function parseHash() {
+  const hash = window.location.hash.replace(/^#/, "");
+  const [view, engId] = hash.split("/");
+  return { view: view || "dashboard", engId: engId || null };
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
-  const [view, setView] = useState("dashboard");
-  const [selectedEngagement, setSelectedEngagement] = useState(null);
+  const [view, setView] = useState(() => parseHash().view);
+  const [selectedEngagement, setSelectedEngagement] = useState(() => parseHash().engId);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,10 +30,23 @@ export default function App() {
     }
   }, []);
 
+  // Sync back/forward navigation
+  useEffect(() => {
+    const onPop = () => {
+      const { view: v, engId } = parseHash();
+      setView(v);
+      if (engId !== null) setSelectedEngagement(engId);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   if (loading) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading...</div>;
   if (!user) return <Login onLogin={setUser} />;
 
   const navigate = (v, engId = null) => {
+    const hash = engId ? `${v}/${engId}` : v;
+    window.location.hash = hash;
     setView(v);
     if (engId !== null) setSelectedEngagement(engId);
   };
@@ -36,6 +55,7 @@ export default function App() {
     localStorage.removeItem("token");
     setUser(null);
     setView("dashboard");
+    window.location.hash = "dashboard";
   };
 
   return (
