@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { ArrowLeft, Download, ChevronUp, ChevronDown, Loader2, ThumbsUp, ThumbsDown, Edit2, ScrollText } from "lucide-react";
 import { getFindings, getEngagement, exportFindings, submitFindingFeedback } from "../utils/api";
 
@@ -21,39 +21,6 @@ export default function FindingsReport({ engagementId, navigate }) {
   const [sortAsc, setSortAsc] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [feedbackState, setFeedbackState] = useState({});
-  const [colWidths, setColWidths] = useState([110, 180, 300, 120, 180]);
-  const dragRef = useRef(null);
-
-  useEffect(() => {
-    const onMove = (e) => {
-      if (!dragRef.current) return;
-      const { idx, startX, startW } = dragRef.current;
-      const delta = e.clientX - startX;
-      setColWidths((prev) => {
-        const next = [...prev];
-        next[idx] = Math.max(60, startW + delta);
-        return next;
-      });
-    };
-    const onUp = () => {
-      dragRef.current = null;
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-    return () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-  }, []);
-
-  const startDrag = (e, idx) => {
-    e.preventDefault();
-    dragRef.current = { idx, startX: e.clientX, startW: colWidths[idx] };
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  };
 
   const getFb = (id) => feedbackState[id] || { mode: null, reason: "", rewordedTitle: "", rewordedDescription: "", done: false };
   const setFb = (id, patch) => setFeedbackState((prev) => ({ ...prev, [id]: { ...getFb(id), ...patch } }));
@@ -239,38 +206,29 @@ export default function FindingsReport({ engagementId, navigate }) {
         <div className="text-center py-20 text-gray-400">No findings recorded for this engagement.</div>
       ) : (
         <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
-          <table className="w-full text-sm table-fixed">
-            <colgroup>
-              {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
-            </colgroup>
+          <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800 text-gray-400 text-left">
-                {[
-                  { label: "Severity", field: "severity", idx: 0 },
-                  { label: "Title", field: "title", idx: 1 },
-                  { label: "Description", field: null, idx: 2 },
-                  { label: "Phase", field: "phase", idx: 3 },
-                  { label: "Exploitation Result", field: null, idx: 4 },
-                ].map(({ label, field, idx }) => (
-                  <th
-                    key={label}
-                    className="px-4 py-3 font-medium relative select-none overflow-hidden"
-                    onClick={field ? () => handleSort(field) : undefined}
-                    style={field ? { cursor: "pointer" } : undefined}
-                  >
-                    <span className={field ? "hover:text-gray-200" : ""}>
-                      {label} {field && <SortIcon field={field} />}
-                    </span>
-                    {idx < 4 && (
-                      <div
-                        onMouseDown={(e) => startDrag(e, idx)}
-                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize group flex items-center justify-center"
-                      >
-                        <div className="w-px h-4 bg-gray-600 group-hover:bg-blue-400 group-hover:h-full transition-all" />
-                      </div>
-                    )}
-                  </th>
-                ))}
+                <th
+                  className="px-4 py-3 font-medium cursor-pointer hover:text-gray-200 w-28"
+                  onClick={() => handleSort("severity")}
+                >
+                  Severity <SortIcon field="severity" />
+                </th>
+                <th
+                  className="px-4 py-3 font-medium cursor-pointer hover:text-gray-200"
+                  onClick={() => handleSort("title")}
+                >
+                  Title <SortIcon field="title" />
+                </th>
+                <th className="px-4 py-3 font-medium">Description</th>
+                <th
+                  className="px-4 py-3 font-medium cursor-pointer hover:text-gray-200 w-32"
+                  onClick={() => handleSort("phase")}
+                >
+                  Phase <SortIcon field="phase" />
+                </th>
+                <th className="px-4 py-3 font-medium w-48">Exploitation Result</th>
               </tr>
             </thead>
             <tbody>

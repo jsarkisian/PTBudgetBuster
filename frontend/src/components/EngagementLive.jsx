@@ -156,6 +156,40 @@ function LogEntry({ event }) {
   );
 }
 
+function DragHandle({ onResize }) {
+  const dragRef = useRef(null);
+
+  const onMouseDown = (e) => {
+    e.preventDefault();
+    dragRef.current = e.clientX;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev) => {
+      const delta = ev.clientX - dragRef.current;
+      dragRef.current = ev.clientX;
+      onResize(delta);
+    };
+    const onUp = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="w-1.5 shrink-0 cursor-col-resize flex items-center justify-center group self-stretch"
+    >
+      <div className="w-px h-full bg-gray-700 group-hover:bg-blue-500 transition-colors" />
+    </div>
+  );
+}
+
 function FindingSidebar({ findings }) {
   const [expanded, setExpanded] = useState({});
 
@@ -223,6 +257,7 @@ export default function EngagementLive({ engagementId, navigate }) {
   const [message, setMessage] = useState("");
   const [stopping, setStopping] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(288);
   const logRef = useRef(null);
   const wsRef = useRef(null);
 
@@ -413,9 +448,9 @@ export default function EngagementLive({ engagementId, navigate }) {
       </div>
 
       {/* Main content area */}
-      <div className="flex-1 flex gap-4 px-4 pb-4 min-h-0">
+      <div className="flex-1 flex px-4 pb-4 min-h-0">
         {/* Log output */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 mr-1">
           <div
             ref={logRef}
             className="flex-1 bg-gray-900 border border-gray-800 rounded-lg overflow-y-auto font-mono"
@@ -454,8 +489,11 @@ export default function EngagementLive({ engagementId, navigate }) {
           </form>
         </div>
 
+        {/* Drag handle */}
+        <DragHandle onResize={(delta) => setSidebarWidth((w) => Math.max(160, Math.min(600, w - delta)))} />
+
         {/* Findings sidebar */}
-        <div className="w-72 shrink-0">
+        <div style={{ width: sidebarWidth }} className="shrink-0 ml-1">
           <FindingSidebar findings={findings} />
         </div>
       </div>
