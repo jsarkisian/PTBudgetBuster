@@ -107,7 +107,7 @@ async def send_notification(
     db: Database,
     event: str,
     engagement_id: str,
-    extra: dict = {},
+    extra: dict | None = None,
 ) -> None:
     """Send an email notification for a scan event.
 
@@ -115,6 +115,8 @@ async def send_notification(
     affect scan execution.
     """
     try:
+        if extra is None:
+            extra = {}
         api_key = await db.get_config("mailgun_api_key") or ""
         domain = await db.get_config("mailgun_domain") or ""
         from_addr = await db.get_config("mailgun_from") or ""

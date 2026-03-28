@@ -117,3 +117,14 @@ def test_build_email_scan_failed():
     assert "Test Eng" in subject
     assert "Bedrock timeout" in body
     assert "ENUMERATION" in body
+
+
+@pytest.mark.anyio
+async def test_send_notification_calls_mailgun_when_configured():
+    db = FakeDB(config=_CFG, engagement=_ENG, user=_USER)
+    with patch("notifications._send_mailgun", new_callable=AsyncMock) as mock_mg:
+        await send_notification(db, SCAN_COMPLETED, "abc123", extra={"findings": []})
+        mock_mg.assert_called_once()
+        _, _, _, to, subject, _ = mock_mg.call_args.args
+        assert to == "alice@example.com"
+        assert "Test Eng" in subject
